@@ -8,6 +8,7 @@ export default function Login() {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [pinId, setPinId] = useState<number | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
 
   useEffect(() => {
     checkExistingAuth();
@@ -31,6 +32,9 @@ export default function Login() {
 
   async function startPlexAuth() {
     try {
+      // Open a placeholder window immediately to satisfy mobile popup blockers
+      const placeholder = window.open('about:blank', '_blank');
+
       setIsAuthenticating(true);
       setStatus('Creating authentication request...');
 
@@ -38,10 +42,20 @@ export default function Login() {
       const pinData = await apiClient.createPlexPin();
       setPinId(pinData.id);
       setClientId(pinData.clientId);
+      setAuthUrl(pinData.authUrl);
 
-      // Open Plex auth window
-      setStatus('Opening Plex sign-in window...');
-      const authWindow = window.open(pinData.authUrl, '_blank');
+      // Navigate placeholder to Plex auth if available
+      if (placeholder) {
+        setStatus('Opening Plex sign-in window...');
+        try {
+          placeholder.location.href = pinData.authUrl;
+        } catch {
+          try { placeholder.close(); } catch {}
+          setStatus('Popup blocked. Tap “Open Plex sign‑in”.');
+        }
+      } else {
+        setStatus('Popup blocked. Tap “Open Plex sign‑in”.');
+      }
 
       // Start polling for authentication
       setStatus('Waiting for Plex authorization...');
@@ -131,8 +145,23 @@ export default function Login() {
                 Continue with Plex
               </button>
             ) : (
-              <div className="flex justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
+              <div className="space-y-3">
+                <div className="flex justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
+                </div>
+                {authUrl && (
+                  <div className="text-center">
+                    <a
+                      href={authUrl}
+                      target="_blank"
+                      rel="noopener"
+                      onClick={(e) => { e.preventDefault(); try { window.open(authUrl, '_blank'); } catch {} }}
+                      className="inline-flex items-center justify-center text-sm text-brand hover:text-brand-400 underline"
+                    >
+                      Open Plex sign‑in
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 

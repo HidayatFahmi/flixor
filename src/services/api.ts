@@ -1,8 +1,8 @@
 // Backend API client
 // Determine API base:
 // - If VITE_API_BASE is set, use it (e.g., http://api.example.com/api or /api)
-// - If running Vite dev (port 5173), default to http://localhost:3001/api
-// - Otherwise default to same-origin '/api' (behind reverse proxy)
+// - In dev, default to same-origin '/api' (proxied by Vite)
+// - In prod, default to same-origin '/api' (reverse-proxied by Nginx/CDN)
 const defaultApiBase = (() => {
   try {
     // In dev, default to same-origin '/api' (proxied to backend by Vite)
@@ -136,6 +136,10 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+// Export resolved bases for other services to consume
+export const API_BASE_URL: string = API_BASE; // e.g., '/api' or 'https://api.example.com/api'
+export const BACKEND_BASE_URL: string = BACKEND_BASE; // e.g., '' or 'https://api.example.com'
 
 // Helper to check if user is authenticated
 export async function checkAuth(): Promise<boolean> {

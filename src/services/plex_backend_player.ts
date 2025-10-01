@@ -1,4 +1,5 @@
-const BACKEND_BASE = 'http://localhost:3001';
+import { API_BASE_URL } from './api';
+const BACKEND_API = API_BASE_URL.replace(/\/$/, '');
 
 type ProgressState = 'playing' | 'paused' | 'stopped' | 'buffering';
 
@@ -19,7 +20,7 @@ export async function backendStreamUrl(ratingKey: string, options?: {
   if (options?.partIndex != null) params.set('partIndex', String(options.partIndex));
   // Omit stream selection for DASH start URL to match legacy frontend behavior
 
-  const res = await fetch(`${BACKEND_BASE}/api/plex/stream/${encodeURIComponent(ratingKey)}${params.size ? `?${params.toString()}` : ''}`, {
+  const res = await fetch(`${BACKEND_API}/plex/stream/${encodeURIComponent(ratingKey)}${params.size ? `?${params.toString()}` : ''}`, {
     credentials: 'include',
   });
   if (!res.ok) throw new Error(`Stream URL failed: ${res.status}`);
@@ -28,7 +29,7 @@ export async function backendStreamUrl(ratingKey: string, options?: {
 }
 
 export async function backendUpdateProgress(ratingKey: string, timeMs: number, durationMs: number, state: ProgressState = 'playing') {
-  const res = await fetch(`${BACKEND_BASE}/api/plex/progress`, {
+  const res = await fetch(`${BACKEND_API}/plex/progress`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },

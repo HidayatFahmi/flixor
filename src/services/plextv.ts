@@ -1,4 +1,5 @@
-const API_BASE = 'http://localhost:3001/api/plextv';
+import { API_BASE_URL } from './api';
+const API_BASE = `${API_BASE_URL.replace(/\/$/, '')}/plextv`;
 
 export function clearPlexTvWatchlistCache() {
   // Backend caches; nothing to clear on the client beyond any UI state

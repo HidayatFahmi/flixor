@@ -2,7 +2,8 @@
  * TMDB Service - Proxies all requests through backend
  */
 
-const BACKEND_BASE = 'http://localhost:3001/api/tmdb';
+import { API_BASE_URL } from './api';
+const BACKEND_BASE = `${API_BASE_URL.replace(/\/$/, '')}/tmdb`;
 const IMG = 'https://image.tmdb.org/t/p';
 
 // Keep local cache for already fetched data
@@ -12,17 +13,18 @@ import { cached } from './cache';
  * Fetch from backend TMDB proxy
  */
 async function tmdbBackendFetch(path: string, params?: Record<string, any>): Promise<any> {
-  const url = new URL(`${BACKEND_BASE}${path}`);
-
+  const base = BACKEND_BASE.replace(/\/$/, '');
+  let url = `${base}${path}`;
   if (params) {
+    const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
-        url.searchParams.append(key, String(value));
-      }
+      if (value !== undefined && value !== null) qs.append(key, String(value));
     });
+    const q = qs.toString();
+    if (q) url += (url.includes('?') ? '&' : '?') + q;
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetch(url, {
     credentials: 'include', // Include cookies for session
   });
 

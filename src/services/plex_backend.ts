@@ -1,15 +1,19 @@
 // Backend-backed Plex service (reads only for now)
-
-const API_BASE = 'http://localhost:3001/api/plex';
+import { API_BASE_URL } from './api';
+const API_BASE = `${API_BASE_URL.replace(/\/$/, '')}/plex`;
 
 async function backendFetch<T = any>(path: string, params?: Record<string, any>): Promise<T> {
-  const url = new URL(`${API_BASE}${path}`);
+  const base = API_BASE.replace(/\/$/, '');
+  let url = `${base}${path}`;
   if (params) {
+    const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null) url.searchParams.append(k, String(v));
+      if (v !== undefined && v !== null) qs.append(k, String(v));
     });
+    const q = qs.toString();
+    if (q) url += (url.includes('?') ? '&' : '?') + q;
   }
-  const res = await fetch(url.toString(), { credentials: 'include' });
+  const res = await fetch(url, { credentials: 'include' });
   if (!res.ok) throw new Error(`Plex backend error ${res.status}`);
   return res.json();
 }
@@ -62,8 +66,14 @@ export async function plexBackendLibrarySecondary(sectionKey: string, directory:
 
 export async function plexBackendDir(path: string, params?: Record<string, any>) {
   const p = path.startsWith('/') ? path.slice(1) : path;
-  const mc = await backendFetch<any>(`/dir/${p}`, params);
-  return { MediaContainer: mc };
+  try {
+    const mc = await backendFetch<any>(`/dir/${p}`, params);
+    return { MediaContainer: mc };
+  } catch (e: any) {
+    // Graceful fallback for 404/500 so Details page doesn’t crash
+    console.warn('[plexBackendDir] request failed', { path, error: String(e?.message || e) });
+    return { MediaContainer: { Metadata: [], Directory: [] } } as any;
+  }
 }
 
 export async function plexBackendSearch(query: string, type?: 1 | 2) {

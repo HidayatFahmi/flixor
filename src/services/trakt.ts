@@ -1,16 +1,9 @@
 import { loadSettings, saveSettings } from '@/state/settings';
 import { cached } from '@/services/cache';
+import { API_BASE_URL } from './api';
 
-
-// Always use backend proxy for Trakt
-const defaultTraktBase = (() => {
-  try {
-    const loc = window.location;
-    if (loc && loc.port === '5173') return 'http://localhost:3001/api/trakt';
-  } catch {}
-  return '/api/trakt';
-})();
-const TRAKT = defaultTraktBase;
+// Always use backend proxy for Trakt (same-origin or configured API base)
+const TRAKT = `${API_BASE_URL.replace(/\/$/, '')}/trakt`;
 // Keep client constants unused to avoid exposing secrets in the browser
 const CLIENT_ID = '';
 const CLIENT_SECRET = '';

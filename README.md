@@ -20,7 +20,12 @@ A fast, Netflix‑style web app for your Plex library. Browse beautiful rows, se
 - Local (advanced)
   1) Install Node.js 18+ and npm
   2) Run: `npm install` then `npm run dev:all`
-  3) Open `http://localhost:8080` and sign in with Plex
+  3) Open `http://localhost:5173` and sign in with Plex
+
+Notes for multi‑device/dev
+- The app calls the backend via relative `/api` so it works from any device on your network.
+- Vite dev server is reachable on your LAN. Visit `http://YOUR_COMPUTER_IP:5173` on your phone/another PC.
+- If you need to point dev proxy to a different backend, set `VITE_PROXY_TARGET` in `.env` (see `.env.example`).
 
 That’s it—no extra setup needed. The app uses the bundled backend by default; the database is created and migrations run automatically on first start.
 
