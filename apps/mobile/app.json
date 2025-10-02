@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Flixor",
+    "slug": "flixor-mobile",
+    "scheme": "flixor",
+    "version": "1.0.0",
+    "orientation": "default",
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {}
+  }
+}

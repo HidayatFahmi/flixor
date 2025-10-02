@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import axios from 'axios';
+import jwt from 'jsonwebtoken';
 import { AppDataSource } from '../db/data-source';
 import { User, UserSettings } from '../db/entities';
 import { AppError } from '../middleware/errorHandler';
@@ -300,16 +301,38 @@ router.get('/plex/pin/:id', async (req: Request, res: Response, next: NextFuncti
         }
       })();
 
-      res.json({
-        authenticated: true,
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          thumb: user.thumb,
-          subscription: user.subscription,
-        },
-      });
+      // If mobile hint present, also issue a JWT for React Native clients
+      const wantsMobile = String(req.query.mobile || req.headers['x-mobile'] || '') === '1';
+      if (wantsMobile) {
+        const secret = process.env.SESSION_SECRET || 'change-this-in-production';
+        const token = jwt.sign(
+          { sub: user.id, plexId: user.plexId, username: user.username },
+          secret,
+          { expiresIn: '7d' }
+        );
+        return res.json({
+          authenticated: true,
+          token,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            thumb: user.thumb,
+            subscription: user.subscription,
+          },
+        });
+      } else {
+        res.json({
+          authenticated: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            thumb: user.thumb,
+            subscription: user.subscription,
+          },
+        });
+      }
     } else {
       // PIN not yet authenticated
       res.json({ authenticated: false });
