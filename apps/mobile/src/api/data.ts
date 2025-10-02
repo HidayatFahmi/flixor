@@ -85,23 +85,51 @@ export async function fetchPlexMetadata(api: MobileApi, ratingKey: string): Prom
 
 export async function fetchPlexEpisodes(api: MobileApi, showRatingKey: string): Promise<any[]> {
   const mc = await api.get(`/api/plex/dir/library/metadata/${encodeURIComponent(showRatingKey)}/children`);
-  return (mc?.MediaContainer?.Metadata || []) as any[];
+  // Backend returns MediaContainer directly (not wrapped)
+  return (mc?.Metadata || []) as any[];
 }
 
-export async function fetchPlexSeasons(api: MobileApi, showRatingKey: string): Promise<any[]> {
-  const mc = await api.get(`/api/plex/dir/library/metadata/${encodeURIComponent(showRatingKey)}/children`);
-  const items = (mc?.MediaContainer?.Metadata || []) as any[];
-  if (!items || !items.length) return [];
+export async function fetchPlexSeasons(api: MobileApi, showRatingKey: string): Promise<Array<{ ratingKey: string; title: string; index?: number; type?: string }>> {
+  const url = `/api/plex/dir/library/metadata/${encodeURIComponent(showRatingKey)}/children`;
+  console.log('[fetchPlexSeasons] Fetching:', url);
+  const mc = await api.get(url);
+  // Backend returns MediaContainer directly (not wrapped)
+  const items = (mc?.Metadata || []) as any[];
+  console.log('[fetchPlexSeasons] Response:', { count: items.length, items: items.slice(0, 2), fullResponse: mc });
+  if (!items || !items.length) {
+    console.warn('[fetchPlexSeasons] No items found');
+    return [];
+  }
   // Many PMS return season entries without explicit type; accept both
-  const seasons = items.filter((x:any)=> String(x.type||'').toLowerCase()==='season');
-  if (seasons.length) return seasons;
-  // Fallback: treat children as seasons (they should have ratingKey and title like 'Season 1')
-  return items;
+  let seasons = items.filter((x:any)=> String(x.type||'').toLowerCase()==='season');
+  if (!seasons.length) {
+    // Fallback: treat children as seasons (they should have ratingKey and title like 'Season 1')
+    console.log('[fetchPlexSeasons] No typed seasons, using all items as fallback');
+    seasons = items;
+  }
+
+  // Normalize to consistent format with required fields
+  const normalized = seasons
+    .filter((s: any) => s.ratingKey) // Only include items with ratingKey
+    .map((s: any) => ({
+      ratingKey: String(s.ratingKey),
+      title: s.title || `Season ${s.index || ''}`,
+      index: s.index,
+      type: s.type
+    }));
+
+  console.log('[fetchPlexSeasons] Normalized seasons:', { count: normalized.length, first: normalized[0] });
+  return normalized;
 }
 
 export async function fetchPlexSeasonEpisodes(api: MobileApi, seasonKey: string): Promise<any[]> {
-  const mc = await api.get(`/api/plex/dir/library/metadata/${encodeURIComponent(seasonKey)}/children`);
-  return (mc?.MediaContainer?.Metadata || []) as any[];
+  const url = `/api/plex/dir/library/metadata/${encodeURIComponent(seasonKey)}/children`;
+  console.log('[fetchPlexSeasonEpisodes] Fetching:', url);
+  const mc = await api.get(url);
+  // Backend returns MediaContainer directly (not wrapped)
+  const episodes = (mc?.Metadata || []) as any[];
+  console.log('[fetchPlexSeasonEpisodes] Response:', { count: episodes.length, first: episodes[0] });
+  return episodes;
 }
 
 export async function fetchTmdbRecommendations(api: MobileApi, mediaType: 'movie'|'tv', id: string): Promise<any[]> {
@@ -397,4 +425,203 @@ export async function mapExternalToRowItems(api: MobileApi, mediaType: 'movie'|'
   }
   await Promise.all(Array.from({ length: limit }).map(worker));
   return out.filter(Boolean).slice(0, 12);
+}
+
+// ---------- TMDB → Plex mapping (parity with web) ----------
+type PlexMatch = { ratingKey: string; meta: any };
+
+function normalizeTitle(s: string): string {
+  const base = (s || '').toLowerCase();
+  const noArticles = base.replace(/^(the|a|an)\s+/i, '');
+  const noDiacritics = noArticles.normalize('NFD').replace(/\p{Diacritic}+/gu, '');
+  return noDiacritics.replace(/[^a-z0-9]+/g, '');
+}
+
+export async function mapTmdbToPlex(api: MobileApi, media: 'movie'|'tv', tmdbId: string, title?: string, year?: string): Promise<PlexMatch | null> {
+  const typeNum = media === 'movie' ? 1 : 2;
+  const hits: any[] = [];
+  const triedGuids: string[] = [];
+
+  async function tryGuid(guid: string) {
+    triedGuids.push(guid);
+    try {
+      const r = await api.get(`/api/plex/findByGuid?guid=${encodeURIComponent(guid)}&type=${typeNum}`);
+      const arr: any[] = (r?.MediaContainer?.Metadata || r?.Metadata || []);
+      if (arr?.length) hits.push(...arr);
+    } catch {}
+    // Fallback: try without type filter
+    try {
+      const r = await api.get(`/api/plex/findByGuid?guid=${encodeURIComponent(guid)}`);
+      const arr: any[] = (r?.MediaContainer?.Metadata || r?.Metadata || []);
+      if (arr?.length) hits.push(...arr);
+    } catch {}
+  }
+
+  // 1) Try direct TMDB GUIDs
+  await tryGuid(`tmdb://${tmdbId}`);
+  await tryGuid(`themoviedb://${tmdbId}`);
+
+  // 2) Try external ids from TMDB
+  try {
+    const ex: any = await api.get(`/api/tmdb/${media}/${encodeURIComponent(tmdbId)}?append_to_response=external_ids`);
+    const imdb: string | undefined = ex?.external_ids?.imdb_id;
+    const tvdb: number | undefined = ex?.external_ids?.tvdb_id;
+    if (imdb) await tryGuid(`imdb://${imdb}`);
+    if (tvdb && media === 'tv') await tryGuid(`tvdb://${tvdb}`);
+    if (!title) title = ex?.title || ex?.name;
+    if (!year) year = (ex?.release_date || ex?.first_air_date || '').slice(0, 4);
+  } catch {}
+
+  // 3) Title search fallback
+  if (!hits.length && title) {
+    try {
+      const sr = await api.get(`/api/plex/search?query=${encodeURIComponent(title)}&type=${typeNum}`);
+      const arr: any[] = Array.isArray(sr) ? sr : (sr?.MediaContainer?.Metadata || sr?.Metadata || []);
+      if (arr?.length) hits.push(...arr);
+    } catch {}
+    // Untyped search as last resort
+    if (!hits.length) {
+      try {
+        const sr2 = await api.get(`/api/plex/search?query=${encodeURIComponent(title)}`);
+        const arr2: any[] = Array.isArray(sr2) ? sr2 : (sr2?.MediaContainer?.Metadata || sr2?.Metadata || []);
+        if (arr2?.length) hits.push(...arr2);
+      } catch {}
+    }
+  }
+
+  if (!hits.length) return null;
+  // Deduplicate by ratingKey
+  const unique = Array.from(new Map(hits.map((h:any)=> [String(h.ratingKey), h])).values());
+
+  // 4) Selection policy
+  // a) exact TMDB GUID match
+  for (const h of unique) {
+    const guids = Array.isArray(h.Guid) ? h.Guid.map((g:any)=> String(g.id||'')) : [];
+    if (guids.includes(`tmdb://${tmdbId}`) || guids.includes(`themoviedb://${tmdbId}`)) {
+      return { ratingKey: String(h.ratingKey), meta: h };
+    }
+  }
+  // b) normalized title + same/near year (±1)
+  if (title) {
+    const nTitle = normalizeTitle(title);
+    for (const h of unique) {
+      const t = normalizeTitle(h.title || h.grandparentTitle || '');
+      const y = Number(h.year || 0);
+      const yy = Number(year || 0);
+      const yearOk = !yy || (y === yy) || (y === yy - 1) || (y === yy + 1);
+      if (t === nTitle && yearOk) {
+        return { ratingKey: String(h.ratingKey), meta: h };
+      }
+    }
+  }
+  // c) fallback first item
+  const h = unique[0];
+  return h ? { ratingKey: String(h.ratingKey), meta: h } : null;
+}
+
+// ---------- Mapping diagnostics for mobile (dev aid) ----------
+export type MappingStep = { kind: 'guid'|'search'|'select'; detail: string; count?: number };
+export type MappingDiagnostics = { steps: MappingStep[]; hits: any[]; unique: any[]; selected?: PlexMatch | null };
+
+export async function mapTmdbToPlexDebug(api: MobileApi, media: 'movie'|'tv', tmdbId: string, title?: string, year?: string): Promise<MappingDiagnostics> {
+  const steps: MappingStep[] = [];
+  const typeNum = media === 'movie' ? 1 : 2;
+  const hits: any[] = [];
+
+  async function tryGuid(guid: string, withType: boolean) {
+    const label = `${guid}${withType ? `&type=${typeNum}` : ''}`;
+    steps.push({ kind: 'guid', detail: `try ${label}` });
+    try {
+      const url = withType ? `/api/plex/findByGuid?guid=${encodeURIComponent(guid)}&type=${typeNum}` : `/api/plex/findByGuid?guid=${encodeURIComponent(guid)}`;
+      const r = await api.get(url);
+      const arr: any[] = (r?.MediaContainer?.Metadata || r?.Metadata || []);
+      steps.push({ kind: 'guid', detail: `resp ${label}`, count: arr?.length || 0 });
+      if (arr?.length) hits.push(...arr);
+    } catch (e: any) {
+      steps.push({ kind: 'guid', detail: `error ${label}: ${String(e?.message||e)}` });
+    }
+  }
+
+  // 1) Try TMDB GUIDs with and without type
+  await tryGuid(`tmdb://${tmdbId}`, true);
+  await tryGuid(`tmdb://${tmdbId}`, false);
+  await tryGuid(`themoviedb://${tmdbId}`, true);
+  await tryGuid(`themoviedb://${tmdbId}`, false);
+
+  // 2) External IDs
+  try {
+    const ex: any = await api.get(`/api/tmdb/${media}/${encodeURIComponent(tmdbId)}?append_to_response=external_ids`);
+    const imdb: string | undefined = ex?.external_ids?.imdb_id;
+    const tvdb: number | undefined = ex?.external_ids?.tvdb_id;
+    if (imdb) {
+      await tryGuid(`imdb://${imdb}`, true);
+      await tryGuid(`imdb://${imdb}`, false);
+    }
+    if (tvdb && media === 'tv') {
+      await tryGuid(`tvdb://${tvdb}`, true);
+      await tryGuid(`tvdb://${tvdb}`, false);
+    }
+    if (!title) title = ex?.title || ex?.name;
+    if (!year) year = (ex?.release_date || ex?.first_air_date || '').slice(0, 4);
+  } catch (e: any) {
+    steps.push({ kind: 'guid', detail: `external_ids error: ${String(e?.message||e)}` });
+  }
+
+  // 3) Search fallback
+  if (title) {
+    try {
+      const sr = await api.get(`/api/plex/search?query=${encodeURIComponent(title)}&type=${typeNum}`);
+      const arr: any[] = Array.isArray(sr) ? sr : (sr?.MediaContainer?.Metadata || sr?.Metadata || []);
+      steps.push({ kind: 'search', detail: `typed search '${title}' type=${typeNum}`, count: (arr?.length || 0) });
+      if (arr?.length) hits.push(...arr);
+    } catch (e: any) {
+      steps.push({ kind: 'search', detail: `typed search error: ${String(e?.message||e)}` });
+    }
+    if (!hits.length) {
+      try {
+        const sr2 = await api.get(`/api/plex/search?query=${encodeURIComponent(title)}`);
+        const arr2: any[] = Array.isArray(sr2) ? sr2 : (sr2?.MediaContainer?.Metadata || sr2?.Metadata || []);
+        steps.push({ kind: 'search', detail: `untyped search '${title}'`, count: (arr2?.length || 0) });
+        if (arr2?.length) hits.push(...arr2);
+      } catch (e: any) {
+        steps.push({ kind: 'search', detail: `untyped search error: ${String(e?.message||e)}` });
+      }
+    }
+  }
+
+  // Deduplicate
+  const unique = Array.from(new Map(hits.map((h:any)=> [String(h.ratingKey), h])).values());
+
+  // Selection
+  let selected: PlexMatch | null = null;
+  // a) exact GUID match
+  for (const h of unique) {
+    const guids = Array.isArray(h.Guid) ? h.Guid.map((g:any)=> String(g.id||'')) : [];
+    if (guids.includes(`tmdb://${tmdbId}`) || guids.includes(`themoviedb://${tmdbId}`)) {
+      steps.push({ kind: 'select', detail: `guid-exact ${h.ratingKey}` });
+      selected = { ratingKey: String(h.ratingKey), meta: h };
+      break;
+    }
+  }
+  // b) title+year
+  if (!selected && title) {
+    const nTitle = normalizeTitle(title);
+    for (const h of unique) {
+      const t = normalizeTitle(h.title || h.grandparentTitle || '');
+      const y = Number(h.year || 0);
+      const yy = Number(year || 0);
+      const yearOk = !yy || (y === yy) || (y === yy - 1) || (y === yy + 1);
+      if (t === nTitle && yearOk) {
+        steps.push({ kind: 'select', detail: `title-year ${h.ratingKey} (${h.title} ${h.year})` });
+        selected = { ratingKey: String(h.ratingKey), meta: h };
+        break;
+      }
+    }
+  }
+  if (!selected && unique[0]) {
+    steps.push({ kind: 'select', detail: `fallback-first ${unique[0].ratingKey}` });
+    selected = { ratingKey: String(unique[0].ratingKey), meta: unique[0] };
+  }
+
+  return { steps, hits, unique, selected };
 }

@@ -9,6 +9,7 @@ import Onboarding from './src/screens/Onboarding';
 import Login from './src/screens/Login';
 import Home from './src/screens/Home';
 import Details from './src/screens/Details';
+import Player from './src/screens/Player';
 import { MobileApi } from './src/api/client';
 import My from './src/screens/My';
 
@@ -47,6 +48,8 @@ export default function App() {
       <HomeStack.Screen name="HomeScreen">{() => <Home api={api!} />}</HomeStack.Screen>
       {/* Transparent modal; Details handles its own swipe-down gesture */}
       <HomeStack.Screen name="Details" component={Details} options={{ presentation: 'transparentModal', animation: 'fade', gestureEnabled: false }} />
+      {/* Fullscreen player */}
+      <HomeStack.Screen name="Player" component={Player} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
     </HomeStack.Navigator>
   );
 
