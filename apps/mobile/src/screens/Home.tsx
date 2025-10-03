@@ -59,30 +59,29 @@ export default function Home({ api }: { api: MobileApi }) {
         const session = await api.session();
         const name = session?.user?.username || 'User';
         setWelcome(`Welcome, ${name}`);
-        // Continue Watching
-        console.log('[Home] continue fetch');
-        const cont = await fetchContinue(api);
-        setContinueItems(cont);
-        // Trending Movies/Shows (raw for hero scoring only)
-        console.log('[Home] trending movies (raw)');
-        setTrendingMovies(await fetchTrendingMovies(api));
-        console.log('[Home] trending shows (raw)');
-        setTrendingShows(await fetchTrendingShows(api));
-        // Recently Added
-        console.log('[Home] recent');
-        setRecent(await fetchRecent(api));
 
-        // Popular on Plex + Trending Now (from TMDB trending TV week)
-        console.log('[Home] tmdb trending tv (week)');
-        const tmdbTv = await fetchTmdbTrendingTVWeek(api);
-        setPopularOnPlexTmdb(tmdbTv.slice(0, 8));
-        setTrendingNow(tmdbTv.slice(8, 16));
+        // Kick off primary rows in parallel and handle failures gracefully
+        const results = await Promise.allSettled([
+          fetchContinue(api),                              // 0
+          fetchTrendingMovies(api),                        // 1
+          fetchTrendingShows(api),                         // 2
+          fetchRecent(api),                                // 3
+          fetchTmdbTrendingTVWeek(api),                    // 4
+          fetchPlexWatchlist(api),                         // 5
+        ]);
+        const val = (i: number, def: any) => results[i].status === 'fulfilled' ? (results[i] as PromiseFulfilledResult<any>).value : def;
+        try { setContinueItems(val(0, [])); } catch {}
+        try { setTrendingMovies(val(1, [])); } catch {}
+        try { setTrendingShows(val(2, [])); } catch {}
+        try { setRecent(val(3, [])); } catch {}
+        try {
+          const tv = val(4, []);
+          setPopularOnPlexTmdb(tv.slice(0, 8));
+          setTrendingNow(tv.slice(8, 16));
+        } catch {}
+        try { setWatchlist(val(5, [])); } catch {}
 
-        // Plex.tv Watchlist
-        console.log('[Home] plex.tv watchlist');
-        setWatchlist(await fetchPlexWatchlist(api));
-
-        // Genre rows
+        // Genre rows – best-effort per row
         const genreDefs: Array<{key:string; type:'movie'|'show'; label:string}> = [
           { key:'TV Shows - Children', type:'show', label:'Children' },
           { key:'Movie - Music', type:'movie', label:'Music' },
@@ -94,23 +93,27 @@ export default function Home({ api }: { api: MobileApi }) {
           { key:'Movies - Animation', type:'movie', label:'Animation' },
         ];
         const gEntries: [string, RowItem[]][] = [];
-        for (const gd of genreDefs) {
+        await Promise.allSettled(genreDefs.map(async (gd) => {
           try { gEntries.push([gd.key, await fetchPlexGenreRow(api, gd.type, gd.label)]); } catch {}
-        }
+        }));
         setGenres(Object.fromEntries(gEntries));
 
-        // Trakt mapped rows (with Plex mapping fallback)
-        console.log('[Home] trakt trending mapped');
-        setTraktTrendMovies(await fetchTraktTrendingMapped(api, 'movies'));
-        setTraktTrendShows(await fetchTraktTrendingMapped(api, 'shows'));
-        console.log('[Home] trakt popular shows');
-        setTraktPopularShows(await fetchTraktPopularShowsMapped(api));
-        console.log('[Home] trakt my watchlist');
-        setTraktMyWatchlist(await fetchTraktWatchlistMapped(api));
-        console.log('[Home] trakt history');
-        setTraktHistory(await fetchTraktHistoryMapped(api));
-        console.log('[Home] trakt recommendations');
-        setTraktRecommendations(await fetchTraktRecommendationsMapped(api));
+        // Trakt mapped rows in parallel (each call is resilient in data.ts)
+        const traktRes = await Promise.allSettled([
+          fetchTraktTrendingMapped(api, 'movies'),         // 0
+          fetchTraktTrendingMapped(api, 'shows'),          // 1
+          fetchTraktPopularShowsMapped(api),               // 2
+          fetchTraktWatchlistMapped(api),                  // 3
+          fetchTraktHistoryMapped(api),                    // 4
+          fetchTraktRecommendationsMapped(api),            // 5
+        ]);
+        const tval = (i: number) => traktRes[i].status === 'fulfilled' ? (traktRes[i] as PromiseFulfilledResult<any>).value : [];
+        setTraktTrendMovies(tval(0));
+        setTraktTrendShows(tval(1));
+        setTraktPopularShows(tval(2));
+        setTraktMyWatchlist(tval(3));
+        setTraktHistory(tval(4));
+        setTraktRecommendations(tval(5));
       } catch {
       } finally {
         setLoading(false);

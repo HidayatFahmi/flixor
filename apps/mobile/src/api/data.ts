@@ -47,34 +47,42 @@ async function withLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<
 }
 
 export async function fetchTrendingMovies(api: MobileApi): Promise<any[]> {
-  const data = await api.get('/api/trakt/trending/movies?limit=20');
-  const arr = Array.isArray(data) ? data : [];
-  // Enrich with TMDB poster/backdrop to render images
-  return withLimit(arr, 5, async (item) => {
-    const tmdbId = item?.movie?.ids?.tmdb;
-    if (!tmdbId) return item;
-    try {
-      const details = await api.get(`/api/tmdb/movie/${tmdbId}`);
-      return { ...item, movie: { ...item.movie, poster_path: details?.poster_path, backdrop_path: details?.backdrop_path } };
-    } catch {
-      return item;
-    }
-  });
+  try {
+    const data = await api.get('/api/trakt/trending/movies?limit=20');
+    const arr = Array.isArray(data) ? data : [];
+    // Enrich with TMDB poster/backdrop to render images
+    return withLimit(arr, 5, async (item) => {
+      const tmdbId = item?.movie?.ids?.tmdb;
+      if (!tmdbId) return item;
+      try {
+        const details = await api.get(`/api/tmdb/movie/${tmdbId}`);
+        return { ...item, movie: { ...item.movie, poster_path: details?.poster_path, backdrop_path: details?.backdrop_path } };
+      } catch {
+        return item;
+      }
+    });
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchTrendingShows(api: MobileApi): Promise<any[]> {
-  const data = await api.get('/api/trakt/trending/shows?limit=20');
-  const arr = Array.isArray(data) ? data : [];
-  return withLimit(arr, 5, async (item) => {
-    const tmdbId = item?.show?.ids?.tmdb;
-    if (!tmdbId) return item;
-    try {
-      const details = await api.get(`/api/tmdb/tv/${tmdbId}`);
-      return { ...item, show: { ...item.show, poster_path: details?.poster_path, backdrop_path: details?.backdrop_path } };
-    } catch {
-      return item;
-    }
-  });
+  try {
+    const data = await api.get('/api/trakt/trending/shows?limit=20');
+    const arr = Array.isArray(data) ? data : [];
+    return withLimit(arr, 5, async (item) => {
+      const tmdbId = item?.show?.ids?.tmdb;
+      if (!tmdbId) return item;
+      try {
+        const details = await api.get(`/api/tmdb/tv/${tmdbId}`);
+        return { ...item, show: { ...item.show, poster_path: details?.poster_path, backdrop_path: details?.backdrop_path } };
+      } catch {
+        return item;
+      }
+    });
+  } catch {
+    return [];
+  }
 }
 
 // Plex details

@@ -21,8 +21,10 @@ router.get('/:type(trending|popular)/:media(movies|shows)', async (req: Request,
     }, 30 * 60); // 30 minutes
     res.json(data);
   } catch (e: any) {
-    logger.error('Trakt public endpoint failed', e);
-    next(new AppError('Failed to fetch from Trakt', 500));
+    const status = e?.response?.status;
+    const data = e?.response?.data;
+    logger.error('Trakt public endpoint failed', { status, data, message: e?.message });
+    next(new AppError('Failed to fetch from Trakt', status && status >= 400 && status < 600 ? status : 500));
   }
 });
 

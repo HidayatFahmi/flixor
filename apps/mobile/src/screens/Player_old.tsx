@@ -1,14 +1,10 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, StatusBar, Dimensions } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
-import { Image as ExpoImage } from 'expo-image';
-import Slider from '@react-native-community/slider';
-import { useNavigation, StackActions } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MobileApi } from '../api/client';
-import { Replay10Icon, Forward10Icon } from '../components/icons/SkipIcons';
 
 type RouteParams = {
   route?: {
@@ -18,13 +14,6 @@ type RouteParams = {
       id?: string;
     };
   };
-};
-
-type NextEpisode = {
-  ratingKey: string;
-  title: string;
-  thumb?: string;
-  episodeLabel?: string;
 };
 
 export default function Player({ route }: RouteParams) {
@@ -49,7 +38,7 @@ export default function Player({ route }: RouteParams) {
   const [markers, setMarkers] = useState<Array<{ type: string; startTimeOffset: number; endTimeOffset: number }>>([]);
 
   // Next episode for auto-play
-  const [nextEpisode, setNextEpisode] = useState<NextEpisode | null>(null);
+  const [nextEpisode, setNextEpisode] = useState<{ ratingKey: string; title: string; thumb?: string } | null>(null);
   const [nextEpisodeCountdown, setNextEpisodeCountdown] = useState<number | null>(null);
 
   // Store Plex server info for timeline updates
@@ -66,17 +55,12 @@ export default function Player({ route }: RouteParams) {
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const controlsTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // Store cleanup info in refs
+  // Store cleanup info in refs so we can access latest values in cleanup without re-running effect
   const cleanupInfoRef = useRef({ plexBaseUrl: '', plexToken: '', sessionId: '' });
-  const isReplacingRef = useRef(false);
-
-  // Scrubbing state
-  const [isScrubbing, setIsScrubbing] = useState(false);
-  // Legacy pan scrub state removed (using Slider now)
 
   useEffect(() => {
     (async () => {
-      // Configure audio session
+      // Configure audio session for video playback
       try {
         await Audio.setAudioModeAsync({
           playsInSilentModeIOS: true,
@@ -87,7 +71,7 @@ export default function Player({ route }: RouteParams) {
         console.warn('[Player] Failed to set audio mode:', e);
       }
 
-      // Enable landscape orientation
+      // Enable landscape orientation for video playback
       try {
         await ScreenOrientation.unlockAsync();
       } catch (e) {
@@ -99,55 +83,39 @@ export default function Player({ route }: RouteParams) {
 
       if (params.type === 'plex' && params.ratingKey && a) {
         try {
-          // Fetch metadata
+          // Fetch metadata - backend returns the metadata object directly (already unwrapped)
           const m = await a.get(`/api/plex/metadata/${encodeURIComponent(params.ratingKey)}`);
-          console.log('[Player] Metadata:', m ? { title: m.title, type: m.type } : 'null');
+          console.log('[Player] Raw metadata response:', m ? { title: m.title, type: m.type, hasMedia: !!m.Media } : 'null');
           setMetadata(m);
 
-          // Fetch markers - use plexBackendDir endpoint
+          // Fetch markers (intro/credits) with includeMarkers=1
           try {
-            const markersRes = await a.get(`/api/plex/dir/library/metadata/${encodeURIComponent(params.ratingKey)}?includeMarkers=1`);
-            console.log('[Player] Markers raw response:', JSON.stringify(markersRes).substring(0, 200));
-
-            // Check if it's wrapped in MediaContainer
-            const markerData = markersRes?.MediaContainer?.Metadata?.[0] || markersRes;
-            const markersList = markerData?.Marker || [];
-
+            const markersData = await a.get(`/api/plex/dir/library/metadata/${encodeURIComponent(params.ratingKey)}?includeMarkers=1`);
+            const markersList = markersData?.Marker || [];
             setMarkers(markersList);
-            console.log('[Player] Markers found:', markersList.length, markersList.map((mk: any) => `${mk.type}: ${mk.startTimeOffset}-${mk.endTimeOffset}`));
+            console.log('[Player] Markers:', markersList.length, markersList.map((mk: any) => mk.type));
           } catch (e) {
-            console.error('[Player] Failed to fetch markers:', e);
+            console.warn('[Player] Failed to fetch markers:', e);
           }
 
           // Fetch next episode if this is an episode
           if (m?.type === 'episode') {
             try {
-              // Get season episodes to find next episode
-              const parentRK = m.parentRatingKey;
-              if (parentRK) {
-                const seasonEps = await a.get(`/api/plex/dir/library/metadata/${encodeURIComponent(parentRK)}/children`);
-                const episodes = seasonEps?.Metadata || [];
-                const currentIndex = episodes.findIndex((ep: any) => String(ep.ratingKey) === String(params.ratingKey));
-                if (currentIndex >= 0 && episodes[currentIndex + 1]) {
-                  const nextEp = episodes[currentIndex + 1];
-                  const seasonNum = nextEp.parentIndex || nextEp.parentIndexTag || nextEp.parent?.index;
-                  const epNum = nextEp.index;
-                  const episodeLabel = (seasonNum && epNum) ? `S${seasonNum}:E${epNum}` : undefined;
-                  setNextEpisode({
-                    ratingKey: String(nextEp.ratingKey),
-                    title: nextEp.title || 'Next Episode',
-                    thumb: nextEp.thumb,
-                    episodeLabel,
-                  } as any);
-                  console.log('[Player] Next episode:', nextEp.title);
-                }
+              const nextEp = await a.get(`/api/plex/next-episode/${encodeURIComponent(params.ratingKey)}`);
+              if (nextEp && nextEp.ratingKey) {
+                setNextEpisode({
+                  ratingKey: String(nextEp.ratingKey),
+                  title: nextEp.title || 'Next Episode',
+                  thumb: nextEp.thumb
+                });
+                console.log('[Player] Next episode:', nextEp.title);
               }
             } catch (e) {
               console.warn('[Player] Failed to fetch next episode:', e);
             }
           }
 
-          // Get Plex server connection details...
+          // Get Plex servers list
           const serversRes = await a.get('/api/plex/servers');
           const servers = Array.isArray(serversRes) ? serversRes : [];
           const activeServer = servers.find((s: any) => s.isActive);
@@ -158,8 +126,13 @@ export default function Player({ route }: RouteParams) {
             return;
           }
 
+          console.log('[Player] Active server:', activeServer);
+
+          // Get server connections
           const connRes = await a.get(`/api/plex/servers/${encodeURIComponent(activeServer.id)}/connections`);
           const connections = connRes?.connections || [];
+
+          // Prefer local connection, then first available
           const selectedConnection = connections.find((c: any) => c.local) || connections[0];
 
           if (!selectedConnection) {
@@ -168,12 +141,18 @@ export default function Player({ route }: RouteParams) {
             return;
           }
 
+          console.log('[Player] Selected connection:', selectedConnection);
+
           const baseUrl = selectedConnection.uri.replace(/\/$/, '');
           setPlexBaseUrl(baseUrl);
           cleanupInfoRef.current.plexBaseUrl = baseUrl;
 
+          // Get Plex token from backend auth endpoint
           const authRes = await a.get('/api/auth/servers');
           const authServers = Array.isArray(authRes) ? authRes : [];
+          console.log('[Player] Auth servers:', authServers.map((s: any) => ({ name: s.name, clientId: s.clientIdentifier })));
+
+          // Match by clientIdentifier (which is the same as server id/machineIdentifier)
           const serverWithToken = authServers.find((s: any) =>
             s.clientIdentifier === activeServer.id ||
             s.clientIdentifier === activeServer.machineIdentifier
@@ -183,20 +162,31 @@ export default function Player({ route }: RouteParams) {
           cleanupInfoRef.current.plexToken = token || '';
 
           if (!token) {
+            console.error('[Player] Could not find token. Active server id:', activeServer.id);
+            console.error('[Player] Available servers:', authServers);
             setError('Could not get Plex access token');
             setLoading(false);
             return;
           }
 
+          console.log('[Player] Got Plex token');
+          console.log('[Player] Metadata:', { title: m?.title, type: m?.type, mediaCount: m?.Media?.length });
+
           const media = (m?.Media || [])[0];
+          console.log('[Player] Media object:', media ? { id: media.id, partCount: media.Part?.length } : 'none');
+
           const part = media?.Part?.[0];
+          console.log('[Player] Part object:', part ? { id: part.id, key: part.key } : 'none');
 
           if (part?.key) {
+            // For mobile, request HLS stream (Plex will transcode if needed)
+            // Use universal decision endpoint to get optimal stream
+            const partId = part.id;
             const sid = Math.random().toString(36).substring(2, 15);
             setSessionId(sid);
             cleanupInfoRef.current.sessionId = sid;
 
-            // Request streaming decision from Plex
+            // Request decision from Plex (will choose direct play or transcode)
             const decisionUrl = `${baseUrl}/video/:/transcode/universal/decision`;
             const decisionParams = new URLSearchParams({
               'X-Plex-Token': token,
@@ -219,17 +209,24 @@ export default function Player({ route }: RouteParams) {
               'X-Plex-Device-Name': 'Mobile'
             });
 
+            console.log('[Player] Requesting decision from:', decisionUrl);
+
             try {
               const decisionRes = await fetch(`${decisionUrl}?${decisionParams.toString()}`);
               const decisionData = await decisionRes.text();
+              console.log('[Player] Decision response:', decisionData.substring(0, 500));
 
+              // Check decision code: 1000 = direct play approved, 3000 = transcode needed
+              // directPlayDecisionCode="1000" means direct play is OK
               const canDirectPlay = decisionData.includes('directPlayDecisionCode="1000"');
 
               if (canDirectPlay) {
+                // Direct play - use the file URL
                 const directUrl = `${baseUrl}${part.key}?X-Plex-Token=${token}`;
+                console.log('[Player] Using direct play:', directUrl);
                 setStreamUrl(directUrl);
               } else {
-                // Transcode - start session
+                // Transcode - start transcode session first, then use HLS stream
                 const transcodeParams = new URLSearchParams({
                   'hasMDE': '1',
                   'path': `/library/metadata/${params.ratingKey}`,
@@ -258,20 +255,32 @@ export default function Player({ route }: RouteParams) {
                   'X-Plex-Token': token
                 });
 
+                // First, start the transcode session
                 const startUrl = `${baseUrl}/video/:/transcode/universal/start.m3u8?${transcodeParams.toString()}`;
-                await fetch(startUrl);
-                const hlsUrl = `${baseUrl}/video/:/transcode/universal/session/${sid}/base/index.m3u8?X-Plex-Token=${token}`;
-                setStreamUrl(hlsUrl);
+                console.log('[Player] Starting transcode session:', startUrl);
+
+                try {
+                  await fetch(startUrl);
+                  // Session started, now use the session playlist URL
+                  const hlsUrl = `${baseUrl}/video/:/transcode/universal/session/${sid}/base/index.m3u8?X-Plex-Token=${token}`;
+                  console.log('[Player] Using HLS transcode session:', hlsUrl);
+                  setStreamUrl(hlsUrl);
+                } catch (startErr) {
+                  console.error('[Player] Failed to start transcode:', startErr);
+                  // Fallback to direct start URL
+                  setStreamUrl(startUrl);
+                }
               }
             } catch (err) {
-              console.error('[Player] Decision failed:', err);
+              console.error('[Player] Decision failed, falling back to HLS transcode:', err);
               const hlsUrl = `${baseUrl}/video/:/transcode/universal/start.m3u8?${decisionParams.toString()}`;
               setStreamUrl(hlsUrl);
             }
 
-            // Set resume position
+            // Set resume position if available
             if (m?.viewOffset) {
               const resumeMs = parseInt(String(m.viewOffset));
+              console.log('[Player] Setting resume position:', resumeMs);
               if (resumeMs > 0) {
                 setTimeout(async () => {
                   if (videoRef.current) {
@@ -283,6 +292,7 @@ export default function Player({ route }: RouteParams) {
 
             setLoading(false);
           } else {
+            console.error('[Player] No part.key found. Full metadata:', JSON.stringify(m, null, 2));
             setError('No playable media found');
             setLoading(false);
           }
@@ -295,10 +305,11 @@ export default function Player({ route }: RouteParams) {
     })();
 
     return () => {
-      // Cleanup
+      // Cleanup on unmount - use refs to get latest values without re-running effect
       (async () => {
         const { plexBaseUrl: baseUrl, plexToken: token, sessionId: sid } = cleanupInfoRef.current;
 
+        // Stop transcode session if active
         if (baseUrl && token && sid) {
           try {
             const stopUrl = `${baseUrl}/video/:/transcode/universal/stop?session=${sid}&X-Plex-Token=${token}`;
@@ -309,20 +320,22 @@ export default function Player({ route }: RouteParams) {
           }
         }
 
-        // Only reset orientation/audio if we're leaving the Player entirely,
-        // not when we're replacing to another Player instance
-        if (!isReplacingRef.current) {
-          try {
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-          } catch (e) {}
+        // Lock orientation back to portrait
+        try {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        } catch (e) {
+          console.warn('[Player] Failed to lock orientation:', e);
+        }
 
-          try {
-            await Audio.setAudioModeAsync({
-              playsInSilentModeIOS: false,
-              staysActiveInBackground: false,
-              shouldDuckAndroid: false,
-            });
-          } catch (e) {}
+        // Reset audio mode
+        try {
+          await Audio.setAudioModeAsync({
+            playsInSilentModeIOS: false,
+            staysActiveInBackground: false,
+            shouldDuckAndroid: false,
+          });
+        } catch (e) {
+          console.warn('[Player] Failed to reset audio mode:', e);
         }
       })();
 
@@ -331,7 +344,7 @@ export default function Player({ route }: RouteParams) {
     };
   }, []);
 
-  // Update progress to Plex
+  // Update progress to Plex periodically (timeline updates)
   useEffect(() => {
     if (!plexBaseUrl || !plexToken || !params.ratingKey) return;
 
@@ -351,14 +364,19 @@ export default function Player({ route }: RouteParams) {
           });
 
           const url = `${plexBaseUrl}/:/timeline?${timelineParams.toString()}`;
-          await fetch(url);
+          const res = await fetch(url);
+          if (!res.ok) {
+            console.warn('[Player] Timeline update failed:', res.status);
+          }
         } catch (e) {
           console.error('[Player] Progress update failed:', e);
         }
       }
     };
 
-    progressInterval.current = setInterval(updateProgress, 10000);
+    progressInterval.current = setInterval(updateProgress, 10000); // Update every 10 seconds
+
+    // Update immediately on play/pause
     updateProgress();
 
     return () => {
@@ -366,13 +384,14 @@ export default function Player({ route }: RouteParams) {
     };
   }, [plexBaseUrl, plexToken, sessionId, params.ratingKey, position, duration, isPlaying]);
 
-  // Cleanup on navigation
+  // Cleanup when navigating away or app goes to background
   useEffect(() => {
     const cleanup = async () => {
       const { plexBaseUrl: baseUrl, plexToken: token, sessionId: sid } = cleanupInfoRef.current;
 
       if (!baseUrl || !token) return;
 
+      // Send stopped timeline update to Plex
       if (params.ratingKey) {
         try {
           const timelineParams = new URLSearchParams({
@@ -386,41 +405,50 @@ export default function Player({ route }: RouteParams) {
             'X-Plex-Product': 'Flixor Mobile',
             'X-Plex-Device': 'iPhone'
           });
-          await fetch(`${baseUrl}/:/timeline?${timelineParams.toString()}`);
-        } catch (e) {}
+          const timelineUrl = `${baseUrl}/:/timeline?${timelineParams.toString()}`;
+          await fetch(timelineUrl);
+          console.log('[Player] Sent stopped timeline update');
+        } catch (e) {
+          console.warn('[Player] Failed to send stopped timeline:', e);
+        }
       }
 
+      // Stop transcode session
       if (sid) {
         try {
-          await fetch(`${baseUrl}/video/:/transcode/universal/stop?session=${sid}&X-Plex-Token=${token}`);
-        } catch (e) {}
+          const stopUrl = `${baseUrl}/video/:/transcode/universal/stop?session=${sid}&X-Plex-Token=${token}`;
+          await fetch(stopUrl);
+          console.log('[Player] Stopped transcode session on navigation:', sid);
+        } catch (e) {
+          console.warn('[Player] Failed to stop transcode:', e);
+        }
+      }
+
+      // Lock orientation back to portrait
+      try {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      } catch (e) {
+        console.warn('[Player] Failed to lock orientation:', e);
+      }
+
+      // Reset audio mode
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: false,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: false,
+        });
+      } catch (e) {
+        console.warn('[Player] Failed to reset audio mode:', e);
       }
     };
 
+    // Listen for navigation blur (when leaving the screen)
     const unsubscribe = nav.addListener('beforeRemove', () => {
       cleanup();
     });
 
-    const focusSub = nav.addListener('focus', async () => {
-      try {
-        await ScreenOrientation.unlockAsync();
-        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: true, shouldDuckAndroid: true });
-        // If we just replaced into this screen, ensure playback starts and orientation is landscape
-        if (isReplacingRef.current) {
-          isReplacingRef.current = false;
-          try { await ScreenOrientation.unlockAsync(); } catch {}
-          try { await videoRef.current?.playAsync?.(); } catch {}
-        }
-      } catch {}
-    });
-
-    const blurSub = nav.addListener('blur', async () => {
-      try {
-        await videoRef.current?.pauseAsync?.();
-      } catch {}
-    });
-
-    return () => { unsubscribe(); focusSub(); blurSub(); };
+    return unsubscribe;
   }, [nav, params.ratingKey]);
 
   // Auto-hide controls
@@ -429,7 +457,7 @@ export default function Player({ route }: RouteParams) {
     setShowControls(true);
     controlsTimeout.current = setTimeout(() => {
       setShowControls(false);
-    }, 4000);
+    }, 3000);
   };
 
   useEffect(() => {
@@ -438,7 +466,7 @@ export default function Player({ route }: RouteParams) {
     }
   }, [isPlaying]);
 
-  // Listen for dimension changes
+  // Listen for dimension changes (rotation)
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       setDimensions({ width: window.width, height: window.height });
@@ -447,13 +475,14 @@ export default function Player({ route }: RouteParams) {
     return () => subscription?.remove();
   }, []);
 
-  // Next episode countdown logic
+  // Next episode countdown logic (for episodes)
   useEffect(() => {
     if (metadata?.type !== 'episode' || !nextEpisode || !duration) {
       setNextEpisodeCountdown(null);
       return;
     }
 
+    // Find credits marker or use last 30 seconds as fallback
     const creditsMarker = markers.find(m => m.type === 'credits');
     const triggerStart = creditsMarker ? (creditsMarker.startTimeOffset / 1000) : Math.max(0, duration - 30000) / 1000;
 
@@ -465,21 +494,25 @@ export default function Player({ route }: RouteParams) {
     }
   }, [metadata, nextEpisode, duration, position, markers]);
 
-  // Auto-play next episode
+  // Auto-play next episode when countdown reaches 0
   useEffect(() => {
     if (nextEpisodeCountdown !== null && nextEpisodeCountdown <= 0 && nextEpisode) {
-      playNext();
+      console.log('[Player] Auto-playing next episode:', nextEpisode.ratingKey);
+      // Navigate to next episode
+      nav.replace('Player', { type: 'plex', ratingKey: nextEpisode.ratingKey });
     }
-  }, [nextEpisodeCountdown, nextEpisode, playNext]);
+  }, [nextEpisodeCountdown, nextEpisode, nav]);
 
-  // Movie end handling
+  // Movie end handling - exit to details at credits start
   useEffect(() => {
     if (metadata?.type !== 'movie' || !duration) return;
 
     const creditsMarker = markers.find(m => m.type === 'credits');
     const creditsStart = creditsMarker ? (creditsMarker.startTimeOffset / 1000) : Math.max(0, duration - 30000) / 1000;
 
+    // Exit when we reach credits (with 1 second threshold)
     if (position / 1000 > 1 && position / 1000 >= creditsStart) {
+      console.log('[Player] Movie reached credits, exiting to details');
       nav.goBack();
     }
   }, [metadata, duration, position, markers, nav]);
@@ -495,9 +528,7 @@ export default function Player({ route }: RouteParams) {
 
     setIsPlaying(status.isPlaying);
     setDuration(status.durationMillis || 0);
-    if (!isScrubbing) {
-      setPosition(status.positionMillis || 0);
-    }
+    setPosition(status.positionMillis || 0);
     setBuffering(status.isBuffering);
   };
 
@@ -510,6 +541,11 @@ export default function Player({ route }: RouteParams) {
     }
   };
 
+  const seekTo = async (value: number) => {
+    if (!videoRef.current) return;
+    await videoRef.current.setPositionAsync(value);
+  };
+
   const skip = async (seconds: number) => {
     if (!videoRef.current) return;
     const newPosition = Math.max(0, Math.min(duration, position + seconds * 1000));
@@ -518,52 +554,14 @@ export default function Player({ route }: RouteParams) {
 
   const skipMarker = async (marker: { type: string; startTimeOffset: number; endTimeOffset: number }) => {
     if (!videoRef.current) return;
+    // Skip to 1 second past the marker end
     await videoRef.current.setPositionAsync(marker.endTimeOffset + 1000);
   };
 
-  const restart = async () => {
-    if (!videoRef.current) return;
-    await videoRef.current.setPositionAsync(0);
-    await videoRef.current.playAsync();
-  };
-
-  const cleanup = useCallback(async () => {
-    const { plexBaseUrl: baseUrl, plexToken: token, sessionId: sid } = cleanupInfoRef.current;
-
-    if (baseUrl && token && sid) {
-      try {
-        const stopUrl = `${baseUrl}/video/:/transcode/universal/stop?session=${sid}&X-Plex-Token=${token}`;
-        await fetch(stopUrl);
-        console.log('[Player] Stopped transcode session:', sid);
-      } catch (e) {
-        console.warn('[Player] Failed to stop transcode:', e);
-      }
-    }
-
-    if (progressInterval.current) clearInterval(progressInterval.current);
-    if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-    try {
-      await videoRef.current?.stopAsync?.();
-    } catch {}
-  }, []);
-
-  const playNext = useCallback(async () => {
-    if (nextEpisode) {
-      // Cleanup current player before navigating
-      isReplacingRef.current = true;
-      await cleanup();
-      // Replace current route using stack action for compatibility
-      // @ts-ignore - navigation may not expose replace; use dispatch
-      nav.dispatch(StackActions.replace('Player', { type: 'plex', ratingKey: nextEpisode.ratingKey }));
-    }
-  }, [nextEpisode, cleanup, nav]);
-
+  // Get current marker (intro or credits) if we're in one
   const currentMarker = markers.find(m =>
     position >= m.startTimeOffset && position <= m.endTimeOffset
   );
-
-  // Pan responder for draggable scrubber
-  // PanResponder no longer used; Slider provides built-in seeking UX
 
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -614,122 +612,80 @@ export default function Player({ route }: RouteParams) {
         />
       ) : null}
 
-      {/* Background tap area to show/hide controls */}
-      <View style={styles.tapArea} pointerEvents="box-none">
-        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={resetControlsTimeout} />
+      {/* Tap area to show/hide controls */}
+      <TouchableOpacity
+        style={styles.tapArea}
+        activeOpacity={1}
+        onPress={resetControlsTimeout}
+      >
         {/* Controls overlay */}
         {showControls && (
-          <>
-            {/* Top gradient bar */}
-            <LinearGradient
-              colors={['rgba(0,0,0,0.7)', 'transparent']}
-              style={styles.topGradient}
-            >
-              <View style={styles.topBar}>
-                <TouchableOpacity onPress={() => nav.goBack()} style={styles.backButton}>
-                  <Ionicons name="chevron-back" size={32} color="#fff" />
-                </TouchableOpacity>
-                {metadata && (
-                  <View style={styles.titleContainer}>
-                    <Text style={styles.title} numberOfLines={1}>
-                      {metadata.grandparentTitle || metadata.title}
-                    </Text>
-                    {metadata.grandparentTitle && (
-                      <Text style={styles.subtitle} numberOfLines={1}>
-                        {metadata.title}
-                      </Text>
-                    )}
-                  </View>
-                )}
-                <View style={styles.topIcons}>
-                  <TouchableOpacity style={styles.iconButton}>
-                    <Ionicons name="search" size={24} color="#fff" />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.iconButton}>
-                    <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
-                  </TouchableOpacity>
+          <View style={styles.controls}>
+            {/* Top bar */}
+            <View style={styles.topBar}>
+              <TouchableOpacity onPress={() => nav.goBack()} style={styles.backButton}>
+                <Ionicons name="arrow-back" size={28} color="#fff" />
+              </TouchableOpacity>
+              {metadata && (
+                <View style={styles.titleContainer}>
+                  <Text style={styles.title}>{metadata.title}</Text>
+                  {metadata.grandparentTitle && (
+                    <Text style={styles.subtitle}>{metadata.grandparentTitle}</Text>
+                  )}
                 </View>
-              </View>
-            </LinearGradient>
+              )}
+            </View>
 
-            {/* Center play controls */}
+            {/* Center controls */}
             <View style={styles.centerControls}>
-              <TouchableOpacity onPress={() => skip(-10)} style={styles.skipButton}>
-                <Replay10Icon size={48} color="#fff" />
+              <TouchableOpacity onPress={() => skip(-10)} style={styles.controlButton}>
+                <Ionicons name="play-back" size={40} color="#fff" />
+                <Text style={styles.skipText}>10</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={togglePlayPause} style={styles.playPauseButton}>
+              <TouchableOpacity onPress={togglePlayPause} style={styles.playButton}>
                 <Ionicons
                   name={isPlaying ? 'pause' : 'play'}
-                  size={50}
+                  size={60}
                   color="#fff"
                 />
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => skip(10)} style={styles.skipButton}>
-                <Forward10Icon size={48} color="#fff" />
+              <TouchableOpacity onPress={() => skip(10)} style={styles.controlButton}>
+                <Ionicons name="play-forward" size={40} color="#fff" />
+                <Text style={styles.skipText}>10</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Bottom gradient controls */}
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.8)']}
-              style={styles.bottomGradient}
-              pointerEvents="box-none"
-            >
-              {/* Progress bar */}
-              <View style={styles.progressSection} pointerEvents="box-none">
-                <Slider
-                  style={{ width: '100%', height: 28 }}
-                  minimumValue={0}
-                  maximumValue={Math.max(1, duration)}
-                  value={Math.max(0, Math.min(duration, position))}
-                  minimumTrackTintColor="#fff"
-                  maximumTrackTintColor="rgba(255,255,255,0.3)"
-                  thumbTintColor="#fff"
-                  onSlidingStart={() => setIsScrubbing(true)}
-                  onValueChange={(val: number) => setPosition(val)}
-                  onSlidingComplete={async (val: number) => {
-                    if (videoRef.current) {
-                      await videoRef.current.setPositionAsync(Math.max(0, Math.min(duration, val)));
-                    }
-                    setIsScrubbing(false);
-                  }}
-                />
-                <View style={styles.timeContainer} pointerEvents="none">
-                  <Text style={styles.timeText}>{formatTime(position)}</Text>
-                  <Text style={styles.timeText}>{formatTime(duration - position)}</Text>
+            {/* Bottom bar with progress */}
+            <View style={styles.bottomBar}>
+              <Text style={styles.timeText}>{formatTime(position)}</Text>
+
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBar}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: duration > 0 ? `${(position / duration) * 100}%` : '0%' }
+                    ]}
+                  />
                 </View>
               </View>
 
-              {/* Bottom action buttons */}
-              <View style={styles.bottomActions}>
-                <TouchableOpacity onPress={restart} style={styles.actionButton}>
-                  <Ionicons name="play-skip-back" size={18} color="#fff" />
-                  <Text style={styles.actionText}>RESTART</Text>
-                </TouchableOpacity>
-
-                {metadata?.type === 'episode' && (
-                  <TouchableOpacity onPress={playNext} style={[styles.actionButton, !nextEpisode && styles.actionButtonDisabled]}>
-                    <Ionicons name="play-skip-forward" size={18} color={nextEpisode ? "#fff" : "#666"} />
-                    <Text style={[styles.actionText, !nextEpisode && styles.actionTextDisabled]}>PLAY NEXT</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </LinearGradient>
-          </>
+              <Text style={styles.timeText}>{formatTime(duration)}</Text>
+            </View>
+          </View>
         )}
 
         {/* Skip Intro/Credits button */}
-        {currentMarker && (
+        {currentMarker && showControls && (
           <View style={styles.skipMarkerContainer}>
             <TouchableOpacity
               onPress={() => skipMarker(currentMarker)}
               style={styles.skipMarkerButton}
             >
-              <Ionicons name="play-skip-forward" size={20} color="#000" />
               <Text style={styles.skipMarkerText}>
-                SKIP {currentMarker.type === 'intro' ? 'INTRO' : currentMarker.type === 'credits' ? 'CREDITS' : 'MARKER'}
+                Skip {currentMarker.type === 'intro' ? 'Intro' : currentMarker.type === 'credits' ? 'Credits' : 'Marker'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -739,40 +695,23 @@ export default function Player({ route }: RouteParams) {
         {nextEpisodeCountdown !== null && nextEpisode && (
           <View style={styles.nextEpisodeContainer}>
             <View style={styles.nextEpisodeCard}>
-              <TouchableOpacity
-                style={styles.nextEpisodeInfo}
-                onPress={playNext}
-                activeOpacity={0.7}
-              >
-                <View style={styles.nextEpisodeThumbnail}>
-                  {nextEpisode.thumb && api ? (
-                    <ExpoImage
-                      source={{
-                        uri: `${api.baseUrl}/api/image/plex?path=${encodeURIComponent(nextEpisode.thumb)}&w=300&h=169&f=webp`,
-                        headers: api.token ? { Authorization: `Bearer ${api.token}` } : undefined,
-                      }}
-                      style={{ width: '100%', height: '100%', borderRadius: 4 }}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <Ionicons name="play-circle" size={40} color="#fff" />
-                  )}
-                </View>
-                <View style={styles.nextEpisodeDetails}>
-                  <Text style={styles.nextEpisodeOverline} numberOfLines={1}>
-                    {nextEpisode.episodeLabel ? `${nextEpisode.episodeLabel} •` : ''} NEXT EPISODE • Playing in {nextEpisodeCountdown}s
-                  </Text>
-                  <Text style={styles.nextEpisodeTitle} numberOfLines={1}>
-                    {nextEpisode.title}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => nav.goBack()}
-                style={styles.seeAllButton}
-              >
-                <Text style={styles.seeAllText}>SEE ALL EPISODES</Text>
-              </TouchableOpacity>
+              <Text style={styles.nextEpisodeTitle}>Next Episode</Text>
+              <Text style={styles.nextEpisodeName} numberOfLines={1}>{nextEpisode.title}</Text>
+              <View style={styles.nextEpisodeActions}>
+                <TouchableOpacity
+                  onPress={() => setNextEpisodeCountdown(null)}
+                  style={styles.nextEpisodeCancelButton}
+                >
+                  <Text style={styles.nextEpisodeCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => nav.replace('Player', { type: 'plex', ratingKey: nextEpisode.ratingKey })}
+                  style={styles.nextEpisodePlayButton}
+                >
+                  <Text style={styles.nextEpisodePlayText}>Play Now</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.nextEpisodeCountdown}>Starting in {nextEpisodeCountdown}s</Text>
             </View>
           </View>
         )}
@@ -780,10 +719,10 @@ export default function Player({ route }: RouteParams) {
         {/* Buffering indicator */}
         {buffering && (
           <View style={styles.bufferingContainer}>
-          <ActivityIndicator size="large" color="#fff" />
-        </View>
-      )}
-      </View>
+            <ActivityIndicator size="large" color="#fff" />
+          </View>
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -826,29 +765,27 @@ const styles = StyleSheet.create({
   tapArea: {
     ...StyleSheet.absoluteFillObject,
   },
-  topGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingTop: 50,
-    paddingBottom: 20,
+  controls: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'space-between',
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingTop: 50,
+    paddingHorizontal: 20,
   },
   backButton: {
-    padding: 4,
+    padding: 10,
   },
   titleContainer: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 10,
   },
   title: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
   },
   subtitle: {
@@ -856,173 +793,136 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2,
   },
-  topIcons: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  iconButton: {
-    padding: 4,
-  },
   centerControls: {
-    position: 'absolute',
-    top: '50%',
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 60,
-    transform: [{ translateY: -40 }],
   },
-  skipButton: {
+  controlButton: {
     position: 'relative',
-    alignItems: 'center',
   },
-  skipLabel: {
-    position: 'absolute',
-    bottom: -2,
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
+  playButton: {
+    padding: 20,
   },
-  playPauseButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bottomGradient: {
+  skipText: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: 30,
-    paddingHorizontal: 16,
+    textAlign: 'center',
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  progressSection: {
-    marginBottom: 16,
-  },
-  // legacy styles (unused now that we use Slider) kept minimal in case of fallback
-  timeContainer: {
+  bottomBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
+    alignItems: 'center',
+    paddingBottom: 30,
+    paddingHorizontal: 20,
   },
   timeText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
   },
-  bottomActions: {
-    flexDirection: 'row',
+  progressContainer: {
+    flex: 1,
+    marginHorizontal: 15,
     justifyContent: 'center',
-    gap: 24,
   },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+  progressBar: {
+    height: 4,
+    backgroundColor: '#666',
+    borderRadius: 2,
   },
-  actionText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  actionButtonDisabled: {
-    opacity: 0.5,
-  },
-  actionTextDisabled: {
-    color: '#666',
-  },
-  skipMarkerContainer: {
-    position: 'absolute',
-    bottom: 140,
-    right: 20,
-  },
-  skipMarkerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  progressFill: {
+    height: '100%',
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 4,
-  },
-  skipMarkerText: {
-    color: '#000',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  nextEpisodeContainer: {
-    position: 'absolute',
-    bottom: 60,
-    left: 20,
-    right: 20,
-    zIndex: 5,
-  },
-  nextEpisodeCard: {
-    backgroundColor: 'rgba(0, 0, 0, 0.88)',
-    borderRadius: 8,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 12,
-  },
-  nextEpisodeInfo: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-    flex: 1,
-  },
-  nextEpisodeThumbnail: {
-    width: 92,
-    height: 52,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  nextEpisodeDetails: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  nextEpisodeOverline: {
-    color: '#ddd',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    marginBottom: 2,
-  },
-  nextEpisodeTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  seeAllButton: {
-    borderWidth: 2,
-    borderColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  seeAllText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1,
+    borderRadius: 2,
   },
   bufferingContainer: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     pointerEvents: 'none',
+  },
+  skipMarkerContainer: {
+    position: 'absolute',
+    bottom: 120,
+    right: 20,
+  },
+  skipMarkerButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backdropFilter: 'blur(10px)',
+  },
+  skipMarkerText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  nextEpisodeContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  nextEpisodeCard: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+    padding: 20,
+    minWidth: 300,
+    maxWidth: 400,
+  },
+  nextEpisodeTitle: {
+    color: '#999',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  nextEpisodeName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  nextEpisodeActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  nextEpisodeCancelButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  nextEpisodeCancelText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  nextEpisodePlayButton: {
+    flex: 1,
+    backgroundColor: '#e50914',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  nextEpisodePlayText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  nextEpisodeCountdown: {
+    color: '#999',
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
