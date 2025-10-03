@@ -94,50 +94,91 @@ export default function Details({ route }: RouteParams) {
     Animated.timing(appear, { toValue: 1, duration: 200, useNativeDriver: true }).start();
   }, []);
 
+  // Lazy load episodes when Episodes tab is selected
+  useEffect(() => {
+    if (tab === 'episodes' && seasonKey && !episodes.length && !episodesLoading && api) {
+      (async () => {
+        setEpisodesLoading(true);
+        console.log('[Details] Lazy loading episodes for season:', seasonKey);
+        try {
+          const eps = await fetchPlexSeasonEpisodes(api, seasonKey);
+          console.log('[Details] Episodes loaded:', { count: eps.length, first: eps[0] });
+          setEpisodes(eps);
+        } catch (e) {
+          console.error('[Details] Failed to load episodes:', e);
+        } finally {
+          setEpisodesLoading(false);
+        }
+      })();
+    }
+  }, [tab, seasonKey, episodes.length, episodesLoading, api]);
+
   useEffect(() => {
     (async () => {
       const a = await MobileApi.load();
       setApi(a);
       if (a && params.type === 'plex' && params.ratingKey) {
         try {
+          // STEP 1: Load basic metadata and unblock UI immediately
           const m = await fetchPlexMetadata(a, params.ratingKey);
           const next: any = { ...m };
-          // Try to fetch TMDB logo
-          try {
-            const guids: string[] = Array.isArray(m?.Guid) ? m.Guid.map((g:any)=> String(g.id||'')) : [];
-            const tmdbGuid = guids.find(g=> g.includes('tmdb://') || g.includes('themoviedb://'));
-            if (tmdbGuid && a) {
-              const tid = tmdbGuid.split('://')[1];
-              const mediaType = (m?.type === 'movie') ? 'movie' : 'tv';
-              const imgs = await a.get(`/api/tmdb/${mediaType}/${encodeURIComponent(tid)}/images?language=en,null`);
-              const logos = (imgs?.logos || []) as any[];
-              const logo = logos.find(l=> l.iso_639_1 === 'en') || logos[0];
-              if (logo?.file_path) next.logoUrl = `https://image.tmdb.org/t/p/w500${logo.file_path}`;
-            }
-          } catch {}
           setMeta(next);
           setMatchedPlex(true);
           setMappedRk(String(params.ratingKey));
           setTab(next?.type === 'show' ? 'episodes' : 'suggested');
-            if (next?.type === 'show') {
-              const seas = await fetchPlexSeasons(a, params.ratingKey);
-              console.log('[Details] Plex show seasons:', { showRK: params.ratingKey, count: seas.length, firstSeason: seas[0] });
-              setSeasons(seas);
-              setSeasonSource('plex');
-              if (seas[0]?.ratingKey) {
-                const firstSeasonKey = String(seas[0].ratingKey);
-                setSeasonKey(firstSeasonKey);
-                setEpisodesLoading(true);
-                console.log('[Details] Fetching episodes for season:', firstSeasonKey);
-                try {
-                  const eps = await fetchPlexSeasonEpisodes(a, firstSeasonKey);
-                  console.log('[Details] Episodes loaded:', { count: eps.length, first: eps[0] });
-                  setEpisodes(eps);
-                } finally { setEpisodesLoading(false); }
-              } else {
-                console.warn('[Details] No valid season ratingKey found in:', seas[0]);
+          setLoading(false); // ✅ Unblock UI immediately with basic data
+
+          // STEP 2: Load non-critical data in parallel (background)
+          const promises = [];
+
+          // TMDB logo (non-blocking)
+          promises.push((async () => {
+            try {
+              const guids: string[] = Array.isArray(m?.Guid) ? m.Guid.map((g:any)=> String(g.id||'')) : [];
+              const tmdbGuid = guids.find(g=> g.includes('tmdb://') || g.includes('themoviedb://'));
+              if (tmdbGuid && a) {
+                const tid = tmdbGuid.split('://')[1];
+                const mediaType = (m?.type === 'movie') ? 'movie' : 'tv';
+                const imgs = await a.get(`/api/tmdb/${mediaType}/${encodeURIComponent(tid)}/images?language=en,null`);
+                const logos = (imgs?.logos || []) as any[];
+                const logo = logos.find(l=> l.iso_639_1 === 'en') || logos[0];
+                if (logo?.file_path) {
+                  setMeta(prev => ({ ...prev, logoUrl: `https://image.tmdb.org/t/p/w500${logo.file_path}` }));
+                }
               }
-              // Continue watching (onDeck)
+            } catch {}
+          })());
+
+          // Ratings (non-blocking)
+          promises.push((async () => {
+            try {
+              const rr = await a.get(`/api/plex/ratings/${encodeURIComponent(String(params.ratingKey))}`);
+              if (rr?.imdb?.rating != null) setPlexImdb(Number(rr.imdb.rating));
+              if (rr?.rottenTomatoes?.critic != null) setPlexRtCritic(Number(rr.rottenTomatoes.critic));
+              if (rr?.rottenTomatoes?.audience != null) setPlexRtAudience(Number(rr.rottenTomatoes.audience));
+            } catch {}
+          })());
+
+          // For TV shows: Load seasons list + onDeck in parallel
+          if (next?.type === 'show') {
+            // Load seasons list (non-blocking)
+            promises.push((async () => {
+              try {
+                const seas = await fetchPlexSeasons(a, params.ratingKey);
+                console.log('[Details] Plex show seasons:', { showRK: params.ratingKey, count: seas.length, firstSeason: seas[0] });
+                setSeasons(seas);
+                setSeasonSource('plex');
+                if (seas[0]?.ratingKey) {
+                  setSeasonKey(String(seas[0].ratingKey));
+                  // Don't load episodes here - wait for user to view Episodes tab
+                }
+              } catch (e) {
+                console.error('[Details] Failed to load seasons:', e);
+              }
+            })());
+
+            // Load onDeck (non-blocking)
+            promises.push((async () => {
               try {
                 const od: any = await a.get(`/api/plex/dir/library/metadata/${encodeURIComponent(String(params.ratingKey))}/onDeck?nocache=${Date.now()}`);
                 const ep = od?.MediaContainer?.Metadata?.[0];
@@ -160,18 +201,15 @@ export default function Details({ route }: RouteParams) {
                   });
                 } else setOnDeck(null);
               } catch { setOnDeck(null); }
-            }
-          if (m?.type === 'show') {
-            // episodes loaded via season
+            })());
           }
-          // Ratings from backend (normalized)
-          try {
-            const rr = await a.get(`/api/plex/ratings/${encodeURIComponent(String(params.ratingKey))}`);
-            if (rr?.imdb?.rating != null) setPlexImdb(Number(rr.imdb.rating));
-            if (rr?.rottenTomatoes?.critic != null) setPlexRtCritic(Number(rr.rottenTomatoes.critic));
-            if (rr?.rottenTomatoes?.audience != null) setPlexRtAudience(Number(rr.rottenTomatoes.audience));
-          } catch {}
-        } catch {}
+
+          // Wait for all background tasks
+          await Promise.allSettled(promises);
+        } catch (e) {
+          console.error('[Details] Failed to load metadata:', e);
+          setLoading(false);
+        }
       }
       // TMDB path with Plex mapping fallback
       if (a && params.type === 'tmdb' && params.id && params.mediaType) {
@@ -441,6 +479,8 @@ export default function Details({ route }: RouteParams) {
                 </View>
               ) : null}
               <SeasonSelector seasons={seasons} seasonKey={seasonKey} onChange={async (key)=> {
+                // Clear episodes and set new season - lazy loading effect will fetch
+                setEpisodes([]);
                 setSeasonKey(key);
                 setEpisodesLoading(true);
                 try {

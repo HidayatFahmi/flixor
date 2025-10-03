@@ -967,7 +967,7 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   nextEpisodeCard: {
-    backgroundColor: 'rgba(0, 0, 0, 0.88)',
+    backgroundColor: 'transparent',
     borderRadius: 8,
     overflow: 'hidden',
     flexDirection: 'row',
