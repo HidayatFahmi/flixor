@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, ActivityIndicator, Text } from 'react-native';
+import GlobalTopAppBar from './src/components/GlobalTopAppBar';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import Onboarding from './src/screens/Onboarding';
@@ -45,15 +46,15 @@ export default function App() {
   }
 
   const HomeStackNavigator = () => (
-    <HomeStack.Navigator screenOptions={{ headerShown: false }}>
-      <HomeStack.Screen name="HomeScreen">{() => <Home api={api!} />}</HomeStack.Screen>
-      {/* Transparent modal; Details handles its own swipe-down gesture */}
-      <HomeStack.Screen name="Details" component={Details} options={{ presentation: 'transparentModal', animation: 'fade', gestureEnabled: false }} />
-      {/* Fullscreen player */}
-      <HomeStack.Screen name="Player" component={Player} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
-      {/* Library screen (navigated from TopAppBar pills) */}
-      <HomeStack.Screen name="Library" component={Library} options={{ presentation: 'card', animation: 'fade' }} />
-    </HomeStack.Navigator>
+    <View style={{ flex:1 }}>
+      <HomeStack.Navigator screenOptions={{ headerShown: false }}>
+        <HomeStack.Screen name="HomeScreen">{() => <Home api={api!} />}</HomeStack.Screen>
+        <HomeStack.Screen name="Details" component={Details} options={{ presentation: 'transparentModal', animation: 'fade', gestureEnabled: false }} />
+        <HomeStack.Screen name="Player" component={Player} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+        <HomeStack.Screen name="Library" component={Library} options={{ presentation: 'card', animation: 'fade' }} />
+      </HomeStack.Navigator>
+      <GlobalTopAppBar />
+    </View>
   );
 
   const Tabs = () => (

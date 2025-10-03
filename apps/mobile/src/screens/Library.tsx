@@ -3,8 +3,9 @@ import { View, Text, ActivityIndicator, Pressable, StyleSheet, Dimensions, Anima
 import { Image as ExpoImage } from 'expo-image';
 import { FlashList } from '@shopify/flash-list';
 import { MobileApi } from '../api/client';
-import TopAppBar from '../components/TopAppBar';
+import { TopBarStore, useTopBarStore } from '../components/TopBarStore';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRoute, useNavigation } from '@react-navigation/native';
 
 type Item = {
   ratingKey: string;
@@ -15,6 +16,8 @@ type Item = {
 };
 
 export default function Library() {
+  const route = useRoute();
+  const nav: any = useNavigation();
   const [api, setApi] = useState<MobileApi | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,12 +28,45 @@ export default function Library() {
   const [hasMore, setHasMore] = useState(true);
   const loadingMoreRef = useRef(false);
   const [sectionKeys, setSectionKeys] = useState<{ show?: string; movie?: string }>({});
-  const [showTopBar, setShowTopBar] = useState(true);
-  const [showFilterBar, setShowFilterBar] = useState(true);
   const y = useRef(new Animated.Value(0)).current;
-  const prevY = useRef(0);
+  const barHeight = useTopBarStore(s => s.height || 90);
 
   const mType = useMemo(() => selected === 'movies' ? 'movie' : selected === 'shows' ? 'show' : 'all', [selected]);
+
+  // Read route params to set initial selection
+  useEffect(() => {
+    const params = route.params as any;
+    if (params?.tab === 'movies') {
+      setSelected('movies');
+    } else if (params?.tab === 'tv') {
+      setSelected('shows');
+    }
+    console.log('[Library] route params:', params);
+  }, [route.params]);
+
+  // Set scrollY immediately on mount
+  React.useLayoutEffect(() => {
+    console.log('[Library] Setting scrollY for Library screen');
+    TopBarStore.setScrollY(y);
+  }, [y]);
+
+  // Push top bar updates via effects (avoid setState in render)
+  useEffect(() => {
+    TopBarStore.setVisible(true);
+    TopBarStore.setShowFilters(true);
+    TopBarStore.setUsername(username);
+    TopBarStore.setSelected(selected);
+    TopBarStore.setHandlers({ 
+      onNavigateLibrary: undefined, 
+      onClose: () => {
+        console.log('[Library] Close button clicked, navigating back');
+        if (nav.canGoBack()) {
+          nav.goBack();
+        }
+      } 
+    });
+  }, [username, selected, nav]);
+
 
   useEffect(() => {
     (async () => {
@@ -153,14 +189,7 @@ export default function Library() {
         style={StyleSheet.absoluteFillObject}
       />
 
-      <TopAppBar
-        visible={showTopBar}
-        username={username}
-        showFilters={showFilterBar}
-        selected={selected}
-        onChange={(t:any)=> setSelected(t)}
-        onOpenCategories={()=>{}}
-      />
+      {/* Global Top Bar updates via effects */}
 
       <FlashList
         data={items}
@@ -168,20 +197,12 @@ export default function Library() {
         renderItem={({ item }) => <Card item={item} api={api} size={itemSize} />}
         estimatedItemSize={itemSize+28}
         numColumns={numColumns}
-        contentContainerStyle={{ padding:8, paddingTop:90 }}
+        contentContainerStyle={{ padding:8, paddingTop: barHeight }}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         onScroll={Animated.event([
           { nativeEvent: { contentOffset: { y } } }
-        ], { useNativeDriver: false, listener: (e:any) => {
-          const off = e.nativeEvent.contentOffset.y;
-          const delta = off - prevY.current;
-          prevY.current = off;
-          if (!showTopBar && off > 120) setShowTopBar(true);
-          else if (showTopBar && off <= 120) setShowTopBar(false);
-          if (!showFilterBar && off > 40 && delta < -1.5) setShowFilterBar(true);
-          if (showFilterBar && delta > 2) setShowFilterBar(false);
-        } })}
+        ], { useNativeDriver: false })}
         ListEmptyComponent={<Text style={{ color:'#888', textAlign:'center', marginTop:40 }}>No items</Text>}
       />
     </View>

@@ -7,7 +7,7 @@ import { BlurView } from 'expo-blur';
 import Pills from './Pills';
 import { LinearGradient } from 'expo-linear-gradient';
 
-export default function TopAppBar({ visible, username, showFilters, selected, onChange, onOpenCategories, onNavigateLibrary }: {
+export default function TopAppBar({ visible, username, showFilters, selected, onChange, onOpenCategories, onNavigateLibrary, onClose, scrollY, onHeightChange }: {
   visible: boolean;
   username?: string;
   showFilters?: boolean;
@@ -15,93 +15,81 @@ export default function TopAppBar({ visible, username, showFilters, selected, on
   onChange?: (t:'all'|'movies'|'shows')=>void;
   onOpenCategories?: ()=>void;
   onNavigateLibrary?: (tab: 'movies'|'shows')=>void;
+  onClose?: ()=>void;
+  scrollY?: Animated.Value;
+  onHeightChange?: (h:number)=>void;
 }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const filterOpacity = useRef(new Animated.Value(0)).current;
-  const heightAnim = useRef(new Animated.Value(0)).current;
-  const blurIntensity = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
   const AnimatedBlurView: any = Animated.createAnimatedComponent(BlurView);
-  // Fade-only animation (no drop/slide)
 
-  useEffect(() => {
-    Animated.timing(opacity, {
-      toValue: visible ? 1 : 0,
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-    Animated.timing(blurIntensity, {
-      toValue: visible ? 90 : 0,
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [visible]);
+  // Compute static heights
+  const baseHeight = 44;
+  const pillsHeight = 48;
+  const totalHeight = insets.top + baseHeight + pillsHeight + 8;
 
+  // Report height immediately on mount and when it changes
   useEffect(() => {
-    Animated.timing(filterOpacity, {
-      toValue: showFilters ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [showFilters]);
+    if (onHeightChange && visible) onHeightChange(totalHeight);
+  }, [totalHeight, visible, onHeightChange]);
 
+  // Derive all animations from scrollY (0→120px scroll range)
+  const blurIntensity = scrollY ? scrollY.interpolate({ inputRange:[0,120], outputRange:[0,90], extrapolate:'clamp' }) : new Animated.Value(0);
+  const tintOpacity = scrollY ? scrollY.interpolate({ inputRange:[0,120], outputRange:[0,0.12], extrapolate:'clamp' }) : new Animated.Value(0);
+  const separatorOpacity = scrollY ? scrollY.interpolate({ inputRange:[0,120], outputRange:[0,0.08], extrapolate:'clamp' }) : new Animated.Value(0);
+  
+  // Debug: log if we have scrollY and test interpolation
   useEffect(() => {
-    const base = 44; // main row
-    const extra = showFilters ? 48 : 0; // pills row
-    const target = insets.top + base + extra + 8; // + padding bottom
-    Animated.timing(heightAnim, {
-      toValue: visible ? target : 0,
-      duration: 180,
-      useNativeDriver: false,
-    }).start();
-  }, [visible, showFilters, insets.top]);
+    console.log('[TopAppBar] mounted - scrollY:', !!scrollY, 'showFilters:', showFilters, 'visible:', visible);
+    console.log('[TopAppBar] blurIntensity type:', typeof blurIntensity);
+  }, [scrollY, showFilters, visible]);
 
   return (
     <Animated.View
       pointerEvents={visible ? 'auto' : 'none'}
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, height: heightAnim }}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, height: totalHeight }}
     >
-      {/* Full-bleed frosted background including status bar area */}
-      <AnimatedBlurView intensity={blurIntensity as any} tint="dark" style={{...StyleSheet.absoluteFillObject}} />
-      {/* Subtle glass tint + gradient to enhance visibility over flat backgrounds */}
-      {/* <LinearGradient
-        pointerEvents="none"
-        colors={[ 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)' ]}
-        style={StyleSheet.absoluteFillObject}
-      /> */}
-      <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(27,10,16,0.12)' }]} />
-      {/* Hairline separator at bottom */}
-      <View style={{ position:'absolute', left:0, right:0, bottom:0, height: StyleSheet.hairlineWidth, backgroundColor:'rgba(255,255,255,0.08)' }} />
+      {/* Full-bleed frosted background – always at max, controlled by container opacity */}
+      <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: scrollY ? scrollY.interpolate({ inputRange:[0,120], outputRange:[0,1], extrapolate:'clamp' }) : 0 }]}>
+        <BlurView
+          intensity={90}
+          tint="dark"
+          style={StyleSheet.absoluteFillObject}
+        />
+        {/* Glass tint overlay */}
+        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(27,10,16,0.12)' }]} />
+      </Animated.View>
+      {/* Hairline separator at bottom – fades in with scroll */}
+      <Animated.View style={{ position:'absolute', left:0, right:0, bottom:0, height: StyleSheet.hairlineWidth, backgroundColor:'rgba(255,255,255,1)', opacity: separatorOpacity }} />
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
-        <Animated.View style={{ paddingHorizontal: 16, paddingTop: 8, opacity }}>
-          {/* Header row */}
-          <View style={{ height: 44, flexDirection: 'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal: 4 }}>
-            <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>For {username || 'You'}</Text>
+        <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+          {/* Header row – always visible */}
+          <View style={{ height: baseHeight, flexDirection: 'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal: 4 }}>
+            <Text style={{ color: '#fff', fontSize: 25, fontWeight: '600'}}>For {username || 'You'}</Text>
             <View style={{ flexDirection: 'row' }}>
               <Feather name="cast" size={20} color="#fff" style={{ marginHorizontal: 8 }} />
               <Ionicons name="download-outline" size={20} color="#fff" style={{ marginHorizontal: 8 }} />
               <Ionicons name="search-outline" size={20} color="#fff" style={{ marginHorizontal: 8 }} />
             </View>
           </View>
-          {/* Animated filters row under header (covered by same blur) */}
-          <Animated.View style={{ opacity: filterOpacity }}>
-            {showFilters ? (
-              <Pills
-                selected={selected || 'all'}
-                onChange={(t)=> {
-                  onChange && onChange(t);
-                  if (t === 'movies' || t === 'shows') {
-                    onNavigateLibrary && onNavigateLibrary(t);
-                  }
-                }}
-                onOpenCategories={onOpenCategories}
-              />
-            ) : null}
-          </Animated.View>
-        </Animated.View>
+          {/* Pills row – always visible */}
+          {showFilters ? (
+            <Pills
+              selected={selected || 'all'}
+              onChange={(t)=> {
+                console.log('[TopAppBar] Pill onChange:', t, 'current selected:', selected);
+                // Always call onChange first to update state
+                onChange && onChange(t);
+                // Then navigate if it's a content pill (not 'all')
+                if ((t === 'movies' || t === 'shows') && onNavigateLibrary) {
+                  console.log('[TopAppBar] Calling onNavigateLibrary with:', t);
+                  onNavigateLibrary(t);
+                }
+              }}
+              onOpenCategories={onOpenCategories}
+              onClose={onClose}
+            />
+          ) : null}
+        </View>
       </SafeAreaView>
     </Animated.View>
   );

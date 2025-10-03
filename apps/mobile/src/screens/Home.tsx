@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ActivityIndicator, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,7 +10,6 @@ import {
   fetchRecent,
   fetchTrendingMovies,
   fetchTrendingShows,
-  // fetchPlexPopular,
   fetchPlexGenreRow,
   fetchPlexWatchlist,
   fetchTraktTrendingMapped,
@@ -21,9 +20,7 @@ import {
   fetchTmdbTrendingTVWeek,
   RowItem,
 } from '../api/data';
-import HomeHeader from '../components/HomeHeader';
-import TopAppBar from '../components/TopAppBar';
-import Pills from '../components/Pills';
+import { TopBarStore, useTopBarStore } from '../components/TopBarStore';
 import HeroCard from '../components/HeroCard';
 
 export default function Home({ api }: { api: MobileApi }) {
@@ -46,11 +43,54 @@ export default function Home({ api }: { api: MobileApi }) {
   const [traktHistory, setTraktHistory] = useState<RowItem[]>([]);
   const [traktRecommendations, setTraktRecommendations] = useState<RowItem[]>([]);
   const [tab, setTab] = useState<'all'|'movies'|'shows'>('all');
-  const [showTopBar, setShowTopBar] = useState(false);
-  const [showFilterBar, setShowFilterBar] = useState(false);
+  const [heroLogo, setHeroLogo] = useState<string | undefined>(undefined);
+  const [heroPick, setHeroPick] = useState<HeroPick | null>(null);
   const y = React.useRef(new Animated.Value(0)).current;
-  const prevY = React.useRef(0);
+  const barHeight = useTopBarStore(s => s.height || 90);
   const isFocused = useIsFocused();
+
+  // Set scrollY immediately on mount and when regaining focus
+  React.useLayoutEffect(() => {
+    if (isFocused) {
+      console.log('[Home] Setting scrollY for Home screen');
+      TopBarStore.setScrollY(y);
+    }
+  }, [isFocused, y]);
+
+  // Reset tab to 'all' when returning to Home (on focus), but not on first mount
+  const isFirstMount = useRef(true);
+  useEffect(() => {
+    if (isFocused) {
+      if (isFirstMount.current) {
+        isFirstMount.current = false;
+      } else {
+        // Only reset if we're returning (not first mount)
+        console.log('[Home] Returning to Home, resetting tab to all');
+        setTab('all');
+      }
+    }
+  }, [isFocused]);
+
+  // Push top bar updates via effects - include isFocused to re-establish handlers when screen regains focus
+  useEffect(() => {
+    if (!isFocused) return; // Only update when focused
+    
+    console.log('[Home] Updating TopBar handlers, tab:', tab);
+    TopBarStore.setVisible(true);
+    TopBarStore.setShowFilters(true);
+    TopBarStore.setUsername(welcome.replace('Welcome, ', ''));
+    TopBarStore.setSelected(tab);
+    TopBarStore.setHandlers({ 
+      onNavigateLibrary: (t)=> {
+        console.log('[Home] Navigating to Library with tab:', t);
+        nav.navigate('Library', { tab: t==='movies'?'movies':'tv' });
+      }, 
+      onClose: () => {
+        console.log('[Home] Close button clicked, resetting to all');
+        setTab('all');
+      }
+    });
+  }, [welcome, tab, nav, isFocused]);
 
   useEffect(() => {
     (async () => {
@@ -121,6 +161,29 @@ export default function Home({ api }: { api: MobileApi }) {
     })();
   }, []);
 
+  // Fetch logo for hero once popularOnPlexTmdb is loaded
+  useEffect(() => {
+    if (popularOnPlexTmdb.length === 0) return;
+    
+    (async () => {
+      const hero = pickHero();
+      setHeroPick(hero);
+      
+      if (hero.tmdbId && hero.mediaType) {
+        try {
+          const imgs = await api.get(`/api/tmdb/${hero.mediaType}/${encodeURIComponent(hero.tmdbId)}/images?language=en,null`);
+          const logos = (imgs?.logos || []) as any[];
+          const logo = logos.find((l:any)=> l.iso_639_1 === 'en') || logos[0];
+          if (logo?.file_path) {
+            setHeroLogo(`https://image.tmdb.org/t/p/w500${logo.file_path}`);
+          }
+        } catch (e) {
+          console.log('[Home] Failed to fetch hero logo:', e);
+        }
+      }
+    })();
+  }, [popularOnPlexTmdb]);
+
   // Light refresh of Trakt-dependent rows on focus (after potential auth)
   useEffect(() => {
     (async () => {
@@ -152,6 +215,15 @@ export default function Home({ api }: { api: MobileApi }) {
     return `${api.baseUrl}/api/image/plex?path=${encodeURIComponent(String(path))}&w=300&f=webp`;
   };
 
+  const plexContinueImage = (item: any) => {
+    // For episodes, use the show's poster (grandparentThumb) instead of episode thumbnail
+    const path = item?.type === 'episode' 
+      ? (item?.grandparentThumb || item?.thumb || item?.art)
+      : (item?.thumb || item?.art);
+    if (!path) return undefined;
+    return `${api.baseUrl}/api/image/plex?path=${encodeURIComponent(String(path))}&w=300&f=webp`;
+  };
+
   const getRowUri = (it: RowItem) => it.image;
   const getRowTitle = (it: RowItem) => it.title;
   const onRowPress = (it: RowItem) => {
@@ -166,100 +238,85 @@ export default function Home({ api }: { api: MobileApi }) {
     }
   };
 
-  type HeroPick = { title: string; image?: string; subtitle?: string };
+  type HeroPick = { title: string; image?: string; subtitle?: string; tmdbId?: string; mediaType?: 'movie'|'tv' };
+  
   const pickHero = (): HeroPick => {
-    // Build candidates with a lightweight scoring similar to web (prefer Plex continue/onDeck; else trending with backdrops)
-    const candidates: Array<{ title: string; image?: string; score: number; subtitle?: string }> = [];
-    // Continue candidates (Plex)
-    continueItems.slice(0, 4).forEach((it, i) => {
-      candidates.push({
-        title: it.title || it.name || 'Continue',
-        image: plexImage(it),
-        score: 50 - i * 2 + (it.viewOffset ? 1 : 0),
-        subtitle: undefined,
-      });
-    });
-    // Trending movies
-    trendingMovies.slice(0, 6).forEach((it, i) => {
-      const b = it?.movie?.backdrop_path ? `https://image.tmdb.org/t/p/w780${it.movie.backdrop_path}` : undefined;
-      const t = it?.movie?.title;
-      if (b && t) candidates.push({ title: t, image: b, score: 40 - i * 2 + (tab !== 'shows' ? 2 : 0), subtitle: `#${i+1} in Movies Today` });
-    });
-    // Trending shows
-    trendingShows.slice(0, 6).forEach((it, i) => {
-      const b = it?.show?.backdrop_path ? `https://image.tmdb.org/t/p/w780${it.show.backdrop_path}` : undefined;
-      const t = it?.show?.title || it?.show?.name;
-      if (b && t) candidates.push({ title: t, image: b, score: 38 - i * 2 + (tab !== 'movies' ? 2 : 0), subtitle: `#${i+1} in Shows Today` });
-    });
-    // Recently added (as a last resort)
-    recent.slice(0, 4).forEach((it, i) => {
-      candidates.push({ title: it.title || it.name || 'Featured', image: plexImage(it), score: 20 - i * 2 });
-    });
-    // Choose best by score
-    const best = candidates.sort((a, b) => b.score - a.score)[0];
-    return { title: best?.title || 'Featured', image: best?.image, subtitle: best?.subtitle };
+    // Pick randomly from Popular on Plex
+    if (popularOnPlexTmdb.length > 0) {
+      const randomIndex = Math.floor(Math.random() * Math.min(popularOnPlexTmdb.length, 8));
+      const pick = popularOnPlexTmdb[randomIndex];
+      
+      // Extract TMDB ID from pick.id (format: "tmdb:tv:12345" or "tmdb:movie:67890")
+      let tmdbId: string | undefined;
+      let mediaType: 'movie'|'tv' | undefined;
+      if (pick.id && pick.id.startsWith('tmdb:')) {
+        const parts = pick.id.split(':');
+        mediaType = parts[1] as 'movie'|'tv';
+        tmdbId = parts[2];
+      }
+      
+      return {
+        title: pick.title,
+        image: pick.image,
+        subtitle: 'Watch the Limited Series now',
+        tmdbId,
+        mediaType,
+      };
+    }
+    
+    // Fallback to trending if Popular on Plex is empty
+    const fallback = [...trendingMovies, ...trendingShows];
+    if (fallback.length > 0) {
+      const randomIndex = Math.floor(Math.random() * Math.min(fallback.length, 6));
+      const pick = fallback[randomIndex];
+      const b = pick?.movie?.backdrop_path || pick?.show?.backdrop_path;
+      const t = pick?.movie?.title || pick?.show?.title || pick?.show?.name;
+      return {
+        title: t || 'Featured',
+        image: b ? `https://image.tmdb.org/t/p/w780${b}` : undefined,
+        subtitle: 'Watch now',
+      };
+    }
+    
+    return { title: 'Featured', image: undefined, subtitle: undefined };
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#1b0a10' }}>
-      {/* Sticky Top Bar that fades in on scroll */}
-      <TopAppBar
-        visible={showTopBar}
-        username={welcome.replace('Welcome, ', '')}
-        showFilters={showFilterBar}
-        selected={tab}
-        onChange={setTab}
-        onOpenCategories={()=>{}}
-        onNavigateLibrary={(t)=> nav.navigate('Library', { tab: t === 'movies' ? 'movies' : 'tv' })}
-      />
-      {/* Themed background layers inspired by web bg-home-gradient */}
+      {/* Sticky Top Bar is global; update via store */}
+      {/* Themed background layers inspired by web bg-home-gradient - full screen */}
       {/* Base vertical dark gradient */}
       <LinearGradient
         colors={[ '#0a0a0a', '#0f0f10', '#0b0c0d' ]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 260 }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
       {/* Diagonal warm tint from bottom-left akin to web's red radial */}
       <LinearGradient
         colors={[ 'rgba(122,22,18,0.28)', 'rgba(122,22,18,0.08)', 'rgba(122,22,18,0.0)' ]}
         start={{ x: 0.0, y: 1.0 }}
         end={{ x: 0.45, y: 0.35 }}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 260 }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
       {/* Diagonal cool tint from top-right akin to web's teal radial */}
       <LinearGradient
         colors={[ 'rgba(20,76,84,0.26)', 'rgba(20,76,84,0.08)', 'rgba(20,76,84,0.0)' ]}
         start={{ x: 1.0, y: 0.0 }}
         end={{ x: 0.55, y: 0.45 }}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 260 }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
       <Animated.ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 24, paddingTop: barHeight }}
         scrollEventThrottle={16}
         onScroll={Animated.event([
           { nativeEvent: { contentOffset: { y } } }
-        ], {
-          useNativeDriver: false,
-          listener: (e) => {
-            const off = e.nativeEvent.contentOffset.y;
-            const delta = off - prevY.current;
-            prevY.current = off;
-            if (!showTopBar && off > 120) setShowTopBar(true);
-            else if (showTopBar && off <= 120) setShowTopBar(false);
-            // Much more sensitive pill show/hide
-            // Show when user scrolls up slightly past a small offset; hide on tiny downward scrolls
-            if (!showFilterBar && off > 40 && delta < -1.5) setShowFilterBar(true);
-            if (showFilterBar && delta > 2) setShowFilterBar(false);
-          }
-        })}
+        ], { useNativeDriver: false })}
       >
-      <HomeHeader username={welcome.replace('Welcome, ', '')} onSearch={()=>{}} />
-      <Pills selected={tab} onChange={(t)=> { setTab(t); if (t==='movies' || t==='shows') nav.navigate('Library', { tab: t==='movies' ? 'movies' : 'tv' }); }} onOpenCategories={()=>{}} />
-      {(() => { const h = pickHero(); return (
-        <HeroCard hero={{ title: h.title, subtitle: h.subtitle, imageUri: h.image }} authHeaders={authHeaders} onPlay={()=>{}} onAdd={()=>{}} />
-      ); })()}
+      {heroPick ? (
+        <HeroCard hero={{ title: heroPick.title, subtitle: heroPick.subtitle, imageUri: heroPick.image, logoUri: heroLogo }} authHeaders={authHeaders} onPlay={()=>{}} onAdd={()=>{}} />
+      ) : null}
 
       <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
       {popularOnPlexTmdb.length > 0 && (
@@ -273,8 +330,8 @@ export default function Home({ api }: { api: MobileApi }) {
 
       {continueItems.length > 0 && (
         <Row title="Continue Watching" items={continueItems}
-          getImageUri={plexImage}
-          getTitle={(it) => it.title || it.name}
+          getImageUri={plexContinueImage}
+          getTitle={(it) => it.type === 'episode' ? (it.grandparentTitle || it.title || it.name) : (it.title || it.name)}
           authHeaders={authHeaders}
           onItemPress={(it)=> nav.navigate('Details', { type:'plex', ratingKey: String(it.ratingKey || it.guid || '') })}
         />
