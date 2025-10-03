@@ -13,6 +13,7 @@ import Library from './src/screens/Library';
 import Details from './src/screens/Details';
 import Player from './src/screens/Player';
 import Search from './src/screens/Search';
+import NewHot from './src/screens/NewHot';
 import { MobileApi } from './src/api/client';
 import My from './src/screens/My';
 
@@ -84,6 +85,7 @@ export default function App() {
       })}
     >
       <Tab.Screen name="HomeTab" options={{ title: 'Home' }} component={HomeStackNavigator} />
+      <Tab.Screen name="NewHotTab" options={{ title: 'New & Hot' }} component={NewHot} />
       <Tab.Screen name="MyTab" options={{ title: 'My Netflix' }}>{() => api ? <My api={api} /> : <View style={{ flex:1, backgroundColor:'#000' }} />}</Tab.Screen>
     </Tab.Navigator>
   );
