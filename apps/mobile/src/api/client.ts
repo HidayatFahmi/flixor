@@ -129,6 +129,19 @@ export class MobileApi {
     this.log('Trakt profile');
     return this.get('/api/trakt/users/me');
   }
+
+  // --- Library helpers (mobile) ---
+  async libraryItems(opts: { type?: 'all'|'movie'|'show'; page?: number; pageSize?: number }) {
+    const { type = 'all', page = 1, pageSize = 30 } = opts || {};
+    const t = type === 'all' ? '' : `&type=${type}`;
+    return this.get(`/api/plex/library/items?page=${page}&pageSize=${pageSize}${t}`);
+  }
+
+  async searchLibrary(opts: { q: string; type?: 'all'|'movie'|'show'; page?: number; pageSize?: number }) {
+    const { q, type = 'all', page = 1, pageSize = 30 } = opts;
+    const t = type === 'all' ? '' : `&type=${type}`;
+    return this.get(`/api/plex/search?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}${t}`);
+  }
 }
 
 // Convenience helpers used by screens

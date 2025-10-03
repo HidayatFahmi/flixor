@@ -203,7 +203,15 @@ export default function Home({ api }: { api: MobileApi }) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#1b0a10' }}>
       {/* Sticky Top Bar that fades in on scroll */}
-      <TopAppBar visible={showTopBar} username={welcome.replace('Welcome, ', '')} showFilters={showFilterBar} selected={tab} onChange={setTab} onOpenCategories={()=>{}} />
+      <TopAppBar
+        visible={showTopBar}
+        username={welcome.replace('Welcome, ', '')}
+        showFilters={showFilterBar}
+        selected={tab}
+        onChange={setTab}
+        onOpenCategories={()=>{}}
+        onNavigateLibrary={(t)=> nav.navigate('Library', { tab: t === 'movies' ? 'movies' : 'tv' })}
+      />
       {/* Themed background layers inspired by web bg-home-gradient */}
       {/* Base vertical dark gradient */}
       <LinearGradient
@@ -248,7 +256,7 @@ export default function Home({ api }: { api: MobileApi }) {
         })}
       >
       <HomeHeader username={welcome.replace('Welcome, ', '')} onSearch={()=>{}} />
-      <Pills selected={tab} onChange={setTab} onOpenCategories={()=>{}} />
+      <Pills selected={tab} onChange={(t)=> { setTab(t); if (t==='movies' || t==='shows') nav.navigate('Library', { tab: t==='movies' ? 'movies' : 'tv' }); }} onOpenCategories={()=>{}} />
       {(() => { const h = pickHero(); return (
         <HeroCard hero={{ title: h.title, subtitle: h.subtitle, imageUri: h.image }} authHeaders={authHeaders} onPlay={()=>{}} onAdd={()=>{}} />
       ); })()}

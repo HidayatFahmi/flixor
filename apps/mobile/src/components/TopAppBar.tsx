@@ -7,13 +7,14 @@ import { BlurView } from 'expo-blur';
 import Pills from './Pills';
 import { LinearGradient } from 'expo-linear-gradient';
 
-export default function TopAppBar({ visible, username, showFilters, selected, onChange, onOpenCategories }: {
+export default function TopAppBar({ visible, username, showFilters, selected, onChange, onOpenCategories, onNavigateLibrary }: {
   visible: boolean;
   username?: string;
   showFilters?: boolean;
   selected?: 'all'|'movies'|'shows';
   onChange?: (t:'all'|'movies'|'shows')=>void;
   onOpenCategories?: ()=>void;
+  onNavigateLibrary?: (tab: 'movies'|'shows')=>void;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const filterOpacity = useRef(new Animated.Value(0)).current;
@@ -88,7 +89,16 @@ export default function TopAppBar({ visible, username, showFilters, selected, on
           {/* Animated filters row under header (covered by same blur) */}
           <Animated.View style={{ opacity: filterOpacity }}>
             {showFilters ? (
-              <Pills selected={selected || 'all'} onChange={(t)=> onChange && onChange(t)} onOpenCategories={onOpenCategories} />
+              <Pills
+                selected={selected || 'all'}
+                onChange={(t)=> {
+                  onChange && onChange(t);
+                  if (t === 'movies' || t === 'shows') {
+                    onNavigateLibrary && onNavigateLibrary(t);
+                  }
+                }}
+                onOpenCategories={onOpenCategories}
+              />
             ) : null}
           </Animated.View>
         </Animated.View>

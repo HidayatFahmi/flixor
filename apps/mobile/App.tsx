@@ -8,6 +8,7 @@ import { BlurView } from 'expo-blur';
 import Onboarding from './src/screens/Onboarding';
 import Login from './src/screens/Login';
 import Home from './src/screens/Home';
+import Library from './src/screens/Library';
 import Details from './src/screens/Details';
 import Player from './src/screens/Player';
 import { MobileApi } from './src/api/client';
@@ -50,6 +51,8 @@ export default function App() {
       <HomeStack.Screen name="Details" component={Details} options={{ presentation: 'transparentModal', animation: 'fade', gestureEnabled: false }} />
       {/* Fullscreen player */}
       <HomeStack.Screen name="Player" component={Player} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+      {/* Library screen (navigated from TopAppBar pills) */}
+      <HomeStack.Screen name="Library" component={Library} options={{ presentation: 'card', animation: 'fade' }} />
     </HomeStack.Navigator>
   );
 
@@ -78,7 +81,6 @@ export default function App() {
       })}
     >
       <Tab.Screen name="HomeTab" options={{ title: 'Home' }} component={HomeStackNavigator} />
-      <Tab.Screen name="NewHotTab" options={{ title: 'New & Hot' }}>{() => <View style={{ flex:1, backgroundColor:'#000', alignItems:'center', justifyContent:'center' }}><ActivityIndicator color="#fff" /></View>}</Tab.Screen>
       <Tab.Screen name="MyTab" options={{ title: 'My Netflix' }}>{() => api ? <My api={api} /> : <View style={{ flex:1, backgroundColor:'#000' }} />}</Tab.Screen>
     </Tab.Navigator>
   );
