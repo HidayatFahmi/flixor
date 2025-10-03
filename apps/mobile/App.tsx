@@ -12,6 +12,7 @@ import Home from './src/screens/Home';
 import Library from './src/screens/Library';
 import Details from './src/screens/Details';
 import Player from './src/screens/Player';
+import Search from './src/screens/Search';
 import { MobileApi } from './src/api/client';
 import My from './src/screens/My';
 
@@ -46,15 +47,16 @@ export default function App() {
   }
 
   const HomeStackNavigator = () => (
-    <View style={{ flex:1 }}>
-      <HomeStack.Navigator screenOptions={{ headerShown: false }}>
-        <HomeStack.Screen name="HomeScreen">{() => <Home api={api!} />}</HomeStack.Screen>
-        <HomeStack.Screen name="Details" component={Details} options={{ presentation: 'transparentModal', animation: 'fade', gestureEnabled: false }} />
-        <HomeStack.Screen name="Player" component={Player} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
-        <HomeStack.Screen name="Library" component={Library} options={{ presentation: 'card', animation: 'fade' }} />
-      </HomeStack.Navigator>
-      <GlobalTopAppBar />
-    </View>
+      <View style={{ flex:1 }}>
+        <HomeStack.Navigator screenOptions={{ headerShown: false }}>
+          <HomeStack.Screen name="HomeScreen">{() => <Home api={api!} />}</HomeStack.Screen>
+          <HomeStack.Screen name="Details" component={Details} options={{ presentation: 'transparentModal', animation: 'fade', gestureEnabled: false }} />
+          <HomeStack.Screen name="Player" component={Player} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+          <HomeStack.Screen name="Library" component={Library} options={{ presentation: 'card', animation: 'fade' }} />
+          <HomeStack.Screen name="Search" component={Search} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        </HomeStack.Navigator>
+        <GlobalTopAppBar />
+      </View>
   );
 
   const Tabs = () => (

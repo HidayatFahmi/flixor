@@ -29,7 +29,10 @@ export default function Library() {
   const loadingMoreRef = useRef(false);
   const [sectionKeys, setSectionKeys] = useState<{ show?: string; movie?: string }>({});
   const y = useRef(new Animated.Value(0)).current;
+  const showPillsAnim = useRef(new Animated.Value(1)).current;
   const barHeight = useTopBarStore(s => s.height || 90);
+  const lastScrollY = useRef(0);
+  const scrollDirection = useRef<'up'|'down'>('down');
 
   const mType = useMemo(() => selected === 'movies' ? 'movie' : selected === 'shows' ? 'show' : 'all', [selected]);
 
@@ -44,10 +47,11 @@ export default function Library() {
     console.log('[Library] route params:', params);
   }, [route.params]);
 
-  // Set scrollY immediately on mount
+  // Set scrollY and showPills immediately on mount
   React.useLayoutEffect(() => {
-    console.log('[Library] Setting scrollY for Library screen');
+    console.log('[Library] Setting scrollY and showPills for Library screen');
     TopBarStore.setScrollY(y);
+    TopBarStore.setShowPills(showPillsAnim);
   }, [y]);
 
   // Push top bar updates via effects (avoid setState in render)
@@ -63,7 +67,11 @@ export default function Library() {
         if (nav.canGoBack()) {
           nav.goBack();
         }
-      } 
+      },
+      onSearch: () => {
+        console.log('[Library] Opening search');
+        nav.navigate('Search');
+      }
     });
   }, [username, selected, nav]);
 
@@ -194,7 +202,7 @@ export default function Library() {
       <FlashList
         data={items}
         keyExtractor={(it)=> String(it.ratingKey)}
-        renderItem={({ item }) => <Card item={item} api={api} size={itemSize} />}
+        renderItem={({ item }) => <Card item={item} api={api} size={itemSize} onPress={()=> nav.navigate('Details', { type:'plex', ratingKey: item.ratingKey })} />}
         estimatedItemSize={itemSize+28}
         numColumns={numColumns}
         contentContainerStyle={{ padding:8, paddingTop: barHeight }}
@@ -202,24 +210,57 @@ export default function Library() {
         onEndReachedThreshold={0.5}
         onScroll={Animated.event([
           { nativeEvent: { contentOffset: { y } } }
-        ], { useNativeDriver: false })}
+        ], { 
+          useNativeDriver: false,
+          listener: (e: any) => {
+            const currentY = e.nativeEvent.contentOffset.y;
+            const delta = currentY - lastScrollY.current;
+            
+            // Determine scroll direction
+            if (delta > 5) {
+              // Scrolling down - hide pills
+              if (scrollDirection.current !== 'down') {
+                scrollDirection.current = 'down';
+                Animated.spring(showPillsAnim, {
+                  toValue: 0,
+                  useNativeDriver: true,
+                  tension: 60,
+                  friction: 10,
+                }).start();
+              }
+            } else if (delta < -5) {
+              // Scrolling up - show pills
+              if (scrollDirection.current !== 'up') {
+                scrollDirection.current = 'up';
+                Animated.spring(showPillsAnim, {
+                  toValue: 1,
+                  useNativeDriver: true,
+                  tension: 60,
+                  friction: 10,
+                }).start();
+              }
+            }
+            
+            lastScrollY.current = currentY;
+          }
+        })}
         ListEmptyComponent={<Text style={{ color:'#888', textAlign:'center', marginTop:40 }}>No items</Text>}
       />
     </View>
   );
 }
 
-function Card({ item, api, size }: { item: Item; api: MobileApi; size: number }) {
+function Card({ item, api, size, onPress }: { item: Item; api: MobileApi; size: number; onPress?: () => void }) {
   const authHeaders = api.token ? { Authorization: `Bearer ${api.token}` } : undefined;
   const img = item.thumb ? `${api.baseUrl}/api/image/plex?path=${encodeURIComponent(item.thumb)}&w=${size*2}&f=webp` : undefined;
   return (
-    <View style={{ width: size, margin:4 }}>
+    <Pressable onPress={onPress} style={{ width: size, margin:4 }}>
       <View style={{ width:size, height: Math.round(size*1.5), backgroundColor:'#111', borderRadius:10, overflow:'hidden' }}>
         {img ? <ExpoImage source={{ uri: img, headers: authHeaders }} style={{ width:'100%', height:'100%' }} contentFit="cover" /> : null}
       </View>
       <Text numberOfLines={1} style={{ color:'#fff', marginTop:6, fontWeight:'700' }}>{item.title}</Text>
       {item.year ? <Text style={{ color:'#aaa', fontSize:12 }}>{item.year}</Text> : null}
-    </View>
+    </Pressable>
   );
 }
 

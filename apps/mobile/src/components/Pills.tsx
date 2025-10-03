@@ -50,7 +50,7 @@ export default function Pills({ selected, onChange, onOpenCategories, onClose }:
   }, [selected]);
 
   return (
-    <Animated.View style={{ flexDirection: 'row', paddingHorizontal: 0, paddingVertical: 8, alignItems: 'center', opacity: layoutOpacity }}>
+    <Animated.View style={{ flexDirection: 'row', paddingHorizontal: 0, paddingVertical: 6, alignItems: 'center', opacity: layoutOpacity }}>
       {/* Render different layouts based on selected state */}
       {selected === 'all' && (
         <>

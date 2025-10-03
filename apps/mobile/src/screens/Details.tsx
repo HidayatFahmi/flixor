@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ActivityIndicator, ScrollView, Pressable, Animated, PanResponder, Dimensions, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MobileApi } from '../api/client';
-import { fetchPlexMetadata, fetchPlexEpisodes, fetchPlexSeasons, fetchPlexSeasonEpisodes, fetchTmdbRecommendations, fetchTmdbRecommendationsMapped, fetchTmdbSimilarMapped, fetchTmdbTvSeasonsList, fetchTmdbSeasonEpisodes, mapTmdbToPlex, mapTmdbToPlexDebug, RowItem } from '../api/data';
+import { fetchPlexMetadata, fetchPlexEpisodes, fetchPlexSeasons, fetchPlexSeasonEpisodes, fetchTmdbRecommendations, fetchTmdbRecommendationsMapped, fetchTmdbSimilarMapped, fetchTmdbTvSeasonsList, fetchTmdbSeasonEpisodes, mapTmdbToPlex, RowItem } from '../api/data';
 import Row from '../components/Row';
 import { Ionicons } from '@expo/vector-icons';
 import Feather from '@expo/vector-icons/Feather';
@@ -33,10 +33,6 @@ export default function Details({ route }: RouteParams) {
   const [matchedPlex, setMatchedPlex] = useState<boolean>(false);
   const [mappedRk, setMappedRk] = useState<string | null>(null);
   const [noLocalSource, setNoLocalSource] = useState<boolean>(false);
-  const [tmdbVote, setTmdbVote] = useState<number | null>(null);
-  const [plexImdb, setPlexImdb] = useState<number | null>(null);
-  const [plexRtCritic, setPlexRtCritic] = useState<number | null>(null);
-  const [plexRtAudience, setPlexRtAudience] = useState<number | null>(null);
   const [episodesLoading, setEpisodesLoading] = useState<boolean>(false);
   const [onDeck, setOnDeck] = useState<any | null>(null);
   const [closing, setClosing] = useState(false);
@@ -94,122 +90,44 @@ export default function Details({ route }: RouteParams) {
     Animated.timing(appear, { toValue: 1, duration: 200, useNativeDriver: true }).start();
   }, []);
 
-  // Lazy load episodes when Episodes tab is selected
-  useEffect(() => {
-    if (tab === 'episodes' && seasonKey && !episodes.length && !episodesLoading && api) {
-      (async () => {
-        setEpisodesLoading(true);
-        console.log('[Details] Lazy loading episodes for season:', seasonKey);
-        try {
-          const eps = await fetchPlexSeasonEpisodes(api, seasonKey);
-          console.log('[Details] Episodes loaded:', { count: eps.length, first: eps[0] });
-          setEpisodes(eps);
-        } catch (e) {
-          console.error('[Details] Failed to load episodes:', e);
-        } finally {
-          setEpisodesLoading(false);
-        }
-      })();
-    }
-  }, [tab, seasonKey, episodes.length, episodesLoading, api]);
-
   useEffect(() => {
     (async () => {
       const a = await MobileApi.load();
       setApi(a);
       if (a && params.type === 'plex' && params.ratingKey) {
         try {
-          // STEP 1: Load basic metadata and unblock UI immediately
           const m = await fetchPlexMetadata(a, params.ratingKey);
           const next: any = { ...m };
-          setMeta(next);
           setMatchedPlex(true);
           setMappedRk(String(params.ratingKey));
+          // Try to fetch TMDB logo
+          try {
+            const guids: string[] = Array.isArray(m?.Guid) ? m.Guid.map((g:any)=> String(g.id||'')) : [];
+            const tmdbGuid = guids.find(g=> g.includes('tmdb://') || g.includes('themoviedb://'));
+            if (tmdbGuid && a) {
+              const tid = tmdbGuid.split('://')[1];
+              const mediaType = (m?.type === 'movie') ? 'movie' : 'tv';
+              const imgs = await a.get(`/api/tmdb/${mediaType}/${encodeURIComponent(tid)}/images?language=en,null`);
+              const logos = (imgs?.logos || []) as any[];
+              const logo = logos.find(l=> l.iso_639_1 === 'en') || logos[0];
+              if (logo?.file_path) next.logoUrl = `https://image.tmdb.org/t/p/w500${logo.file_path}`;
+            }
+          } catch {}
+          setMeta(next);
           setTab(next?.type === 'show' ? 'episodes' : 'suggested');
-          setLoading(false); // ✅ Unblock UI immediately with basic data
-
-          // STEP 2: Load non-critical data in parallel (background)
-          const promises = [];
-
-          // TMDB logo (non-blocking)
-          promises.push((async () => {
-            try {
-              const guids: string[] = Array.isArray(m?.Guid) ? m.Guid.map((g:any)=> String(g.id||'')) : [];
-              const tmdbGuid = guids.find(g=> g.includes('tmdb://') || g.includes('themoviedb://'));
-              if (tmdbGuid && a) {
-                const tid = tmdbGuid.split('://')[1];
-                const mediaType = (m?.type === 'movie') ? 'movie' : 'tv';
-                const imgs = await a.get(`/api/tmdb/${mediaType}/${encodeURIComponent(tid)}/images?language=en,null`);
-                const logos = (imgs?.logos || []) as any[];
-                const logo = logos.find(l=> l.iso_639_1 === 'en') || logos[0];
-                if (logo?.file_path) {
-                  setMeta(prev => ({ ...prev, logoUrl: `https://image.tmdb.org/t/p/w500${logo.file_path}` }));
-                }
-              }
-            } catch {}
-          })());
-
-          // Ratings (non-blocking)
-          promises.push((async () => {
-            try {
-              const rr = await a.get(`/api/plex/ratings/${encodeURIComponent(String(params.ratingKey))}`);
-              if (rr?.imdb?.rating != null) setPlexImdb(Number(rr.imdb.rating));
-              if (rr?.rottenTomatoes?.critic != null) setPlexRtCritic(Number(rr.rottenTomatoes.critic));
-              if (rr?.rottenTomatoes?.audience != null) setPlexRtAudience(Number(rr.rottenTomatoes.audience));
-            } catch {}
-          })());
-
-          // For TV shows: Load seasons list + onDeck in parallel
           if (next?.type === 'show') {
-            // Load seasons list (non-blocking)
-            promises.push((async () => {
-              try {
-                const seas = await fetchPlexSeasons(a, params.ratingKey);
-                console.log('[Details] Plex show seasons:', { showRK: params.ratingKey, count: seas.length, firstSeason: seas[0] });
-                setSeasons(seas);
-                setSeasonSource('plex');
-                if (seas[0]?.ratingKey) {
-                  setSeasonKey(String(seas[0].ratingKey));
-                  // Don't load episodes here - wait for user to view Episodes tab
-                }
-              } catch (e) {
-                console.error('[Details] Failed to load seasons:', e);
-              }
-            })());
-
-            // Load onDeck (non-blocking)
-            promises.push((async () => {
-              try {
-                const od: any = await a.get(`/api/plex/dir/library/metadata/${encodeURIComponent(String(params.ratingKey))}/onDeck?nocache=${Date.now()}`);
-                const ep = od?.MediaContainer?.Metadata?.[0];
-                if (ep) {
-                  const durMin = Math.round((ep.duration||0)/60000);
-                  const progress = (() => {
-                    const dur = (ep.duration||0)/1000; const vo = (ep.viewOffset||0)/1000; const vc = ep.viewCount||0;
-                    if (vc > 0) return 100;
-                    if (dur > 0 && vo/dur >= 0.95) return 100;
-                    if (dur > 0) return Math.round((vo/dur)*100);
-                    return 0;
-                  })();
-                  setOnDeck({
-                    id: `plex:${ep.ratingKey}`,
-                    title: ep.title,
-                    overview: ep.summary,
-                    image: `${a.baseUrl}/api/image/plex?path=${encodeURIComponent(String(ep.thumb || ep.parentThumb || ''))}&w=640&f=webp`,
-                    duration: durMin,
-                    progress,
-                  });
-                } else setOnDeck(null);
-              } catch { setOnDeck(null); }
-            })());
+            const seas = await fetchPlexSeasons(a, params.ratingKey);
+            setSeasons(seas);
+            setSeasonSource('plex');
+            if (seas[0]?.ratingKey) {
+              setSeasonKey(String(seas[0].ratingKey));
+              setEpisodes(await fetchPlexSeasonEpisodes(a, String(seas[0].ratingKey)));
+            }
           }
-
-          // Wait for all background tasks
-          await Promise.allSettled(promises);
-        } catch (e) {
-          console.error('[Details] Failed to load metadata:', e);
-          setLoading(false);
-        }
+          if (m?.type === 'show') {
+            // episodes loaded via season
+          }
+        } catch {}
       }
       // TMDB path with Plex mapping fallback
       if (a && params.type === 'tmdb' && params.id && params.mediaType) {
@@ -218,10 +136,13 @@ export default function Details({ route }: RouteParams) {
           let detForMap: any = null;
           try { detForMap = await a.get(`/api/tmdb/${params.mediaType}/${encodeURIComponent(params.id)}?append_to_response=external_ids`); } catch {}
           const mapped = await mapTmdbToPlex(a, params.mediaType, String(params.id), detForMap?.title || detForMap?.name, (detForMap?.release_date || detForMap?.first_air_date || '').slice(0,4));
+          
           if (mapped?.ratingKey) {
             // Use full Plex metadata so UI/features work (play, badges)
             const m = await fetchPlexMetadata(a, String(mapped.ratingKey));
             const next: any = { ...m };
+            setMatchedPlex(true);
+            setMappedRk(String(mapped.ratingKey));
             // Optional TMDB logo
             try {
               const guids: string[] = Array.isArray(m?.Guid) ? m.Guid.map((g:any)=> String(g.id||'')) : [];
@@ -236,57 +157,16 @@ export default function Details({ route }: RouteParams) {
               }
             } catch {}
             setMeta(next);
-            setMatchedPlex(true);
-            setMappedRk(String(mapped.ratingKey));
             setTab(next?.type === 'show' ? 'episodes' : 'suggested');
             if (next?.type === 'show') {
               const seas = await fetchPlexSeasons(a, String(mapped.ratingKey));
-              console.log('[Details] TMDB→Plex mapped show seasons:', { showRK: mapped.ratingKey, count: seas.length, firstSeason: seas[0] });
               setSeasons(seas);
               setSeasonSource('plex');
               if (seas[0]?.ratingKey) {
-                const firstSeasonKey = String(seas[0].ratingKey);
-                setSeasonKey(firstSeasonKey);
-                setEpisodesLoading(true);
-                console.log('[Details] Fetching episodes for mapped season:', firstSeasonKey);
-                try {
-                  const eps = await fetchPlexSeasonEpisodes(a, firstSeasonKey);
-                  console.log('[Details] Episodes loaded for mapped show:', { count: eps.length, first: eps[0] });
-                  setEpisodes(eps);
-                } finally { setEpisodesLoading(false); }
-              } else {
-                console.warn('[Details] No valid season ratingKey found in mapped show:', seas[0]);
+                setSeasonKey(String(seas[0].ratingKey));
+                setEpisodes(await fetchPlexSeasonEpisodes(a, String(seas[0].ratingKey)));
               }
-              try {
-                const od: any = await a.get(`/api/plex/dir/library/metadata/${encodeURIComponent(String(mapped.ratingKey))}/onDeck?nocache=${Date.now()}`);
-                const ep = od?.MediaContainer?.Metadata?.[0];
-                if (ep) {
-                  const durMin = Math.round((ep.duration||0)/60000);
-                  const progress = (() => {
-                    const dur = (ep.duration||0)/1000; const vo = (ep.viewOffset||0)/1000; const vc = ep.viewCount||0;
-                    if (vc > 0) return 100;
-                    if (dur > 0 && vo/dur >= 0.95) return 100;
-                    if (dur > 0) return Math.round((vo/dur)*100);
-                    return 0;
-                  })();
-                  setOnDeck({
-                    id: `plex:${ep.ratingKey}`,
-                    title: ep.title,
-                    overview: ep.summary,
-                    image: `${a.baseUrl}/api/image/plex?path=${encodeURIComponent(String(ep.thumb || ep.parentThumb || ''))}&w=640&f=webp`,
-                    duration: durMin,
-                    progress,
-                  });
-                } else setOnDeck(null);
-              } catch { setOnDeck(null); }
             }
-            // Fetch normalized ratings from backend
-            try {
-              const rr = await a.get(`/api/plex/ratings/${encodeURIComponent(String(mapped.ratingKey))}`);
-              if (rr?.imdb?.rating != null) setPlexImdb(Number(rr.imdb.rating));
-              if (rr?.rottenTomatoes?.critic != null) setPlexRtCritic(Number(rr.rottenTomatoes.critic));
-              if (rr?.rottenTomatoes?.audience != null) setPlexRtAudience(Number(rr.rottenTomatoes.audience));
-            } catch {}
           } else {
             // Fallback: show TMDB details minimal UI
             const det = detForMap || await a.get(`/api/tmdb/${params.mediaType}/${encodeURIComponent(params.id)}?append_to_response=external_ids`);
@@ -299,11 +179,56 @@ export default function Details({ route }: RouteParams) {
               type: params.mediaType === 'movie' ? 'movie' : 'show',
               backdropUrl: back,
               Genre: genres,
-              tmdbCollectionName: det?.belongs_to_collection?.name,
             });
-            setTmdbVote(typeof det?.vote_average === 'number' ? det.vote_average : null);
-            setNoLocalSource(true);
-            // For TV, we’ll show TMDB seasons/episodes below if unmatched
+            setNoLocalSource(true); // Mark as TMDB-only content
+            setMatchedPlex(false);
+            setMappedRk(null);
+            // Attempt secondary Plex mapping for TV via search if show-level GUID was not found
+            if (params.mediaType === 'tv') {
+              try {
+                const titleName: string = det?.name || '';
+                const yearStr: string = (det?.first_air_date || '').slice(0,4);
+                if (titleName) {
+                  const q = encodeURIComponent(titleName);
+                  const search = await a.get(`/api/plex/search?query=${q}&type=2`);
+                  const list: any[] = (search?.MediaContainer?.Metadata || search?.Metadata || []);
+                  // Prefer items whose GUID matches TMDB id
+                  const tmdbIdStr = String(params.id);
+                  let hit = list.find((m:any)=> (Array.isArray(m.Guid) ? m.Guid : []).some((g:any)=> String(g.id||'').includes(`tmdb://${tmdbIdStr}`) || String(g.id||'').includes(`themoviedb://${tmdbIdStr}`)));
+                  // Else fallback to year match and best title similarity
+                  if (!hit && yearStr) {
+                    const candidates = list.filter((m:any)=> String(m.type)==='show' && String(m.year||'')===yearStr);
+                    hit = candidates[0] || list.find((m:any)=> String(m.type)==='show');
+                  }
+                  if (hit?.ratingKey) {
+                    // Upgrade to Plex metadata + seasons/episodes
+                    const m = await fetchPlexMetadata(a, String(hit.ratingKey));
+                    const next: any = { ...m };
+                    try {
+                      const guids: string[] = Array.isArray(m?.Guid) ? m.Guid.map((g:any)=> String(g.id||'')) : [];
+                      const tguid = guids.find(g=> g.includes('tmdb://') || g.includes('themoviedb://'));
+                      if (tguid) {
+                        const tid = tguid.split('://')[1];
+                        const imgs = await a.get(`/api/tmdb/tv/${encodeURIComponent(tid)}/images?language=en,null`);
+                        const logos = (imgs?.logos || []) as any[];
+                        const logo = logos.find(l=> l.iso_639_1 === 'en') || logos[0];
+                        if (logo?.file_path) next.logoUrl = `https://image.tmdb.org/t/p/w500${logo.file_path}`;
+                      }
+                    } catch {}
+                    setMeta(next);
+                    setTab('episodes');
+                    try {
+                      const seas = await fetchPlexSeasons(a, String(hit.ratingKey));
+                      setSeasons(seas);
+                      if (seas[0]?.ratingKey) {
+                        setSeasonKey(String(seas[0].ratingKey));
+                        setEpisodes(await fetchPlexSeasonEpisodes(a, String(seas[0].ratingKey)));
+                      }
+                    } catch {}
+                  }
+                }
+              } catch {}
+            }
             // Fetch TMDB credits for cast/crew
             try {
               const cr = await a.get(`/api/tmdb/${params.mediaType}/${encodeURIComponent(params.id)}/credits`);
@@ -317,8 +242,8 @@ export default function Details({ route }: RouteParams) {
                 if (ss.length) {
                   setSeasons(ss.map(s=> ({ key: s.key, title: s.title })) as any);
                   setSeasonKey(ss[0].key);
-                  setEpisodesLoading(true);
-                  try { const eps = await fetchTmdbSeasonEpisodes(a, String(params.id), Number(ss[0].key)); setEpisodes(eps); } finally { setEpisodesLoading(false); }
+                  const eps = await fetchTmdbSeasonEpisodes(a, String(params.id), Number(ss[0].key));
+                  setEpisodes(eps);
                   setSeasonSource('tmdb');
                 }
               } catch {}
@@ -366,7 +291,7 @@ export default function Details({ route }: RouteParams) {
   const backdropOpacity = panY.interpolate({ inputRange: [0, screenH * 0.8, screenH], outputRange: [1, 1, 0], extrapolate: 'clamp' });
 
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:'transparent' }}>
+    <SafeAreaView edges={['top']} style={{ flex:1, backgroundColor:'transparent' }}>
       <Animated.View style={{ flex:1, transform:[{ translateY: panY }] }} {...panResponder.panHandlers}>
         {/* Dim + blur backdrop under the modal so swiping reveals content behind, not black */}
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}>
@@ -396,10 +321,9 @@ export default function Details({ route }: RouteParams) {
             ) : null}
             {/* Top-right actions over image */}
             <View style={{ position:'absolute', right: 12, top: 12, flexDirection:'row' }}>
-              <Feather name="cast" size={20} color="#fff" style={{ marginHorizontal: 8 }} />
-              <Ionicons name="share-outline" size={20} color="#fff" style={{ marginHorizontal: 8 }} />
-              <Pressable onPress={()=> nav.goBack()}>
-                <Ionicons name="close" size={22} color="#fff" style={{ marginHorizontal: 8 }} />
+              <Feather name="cast" size={25} color="#fff" style={{ marginHorizontal: 20 }} />
+              <Pressable onPress={() => { nav.goBack(); }} style={{ width: 25, height: 25, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(27,10,16,0.12)', backgroundColor: 'rgba(27,10,16,0.12)', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
+                <Ionicons name="close" color="#fff" size={18} />
               </Pressable>
             </View>
             {/* Gradient from image into content */}
@@ -412,7 +336,6 @@ export default function Details({ route }: RouteParams) {
             {meta?.logoUrl && ExpoImage ? (
               <ExpoImage source={{ uri: meta.logoUrl }} style={{ position:'absolute', bottom: 24, left:'10%', right:'10%', height: 48 }} contentFit="contain" />
             ) : null}
-            {/* No diagnostics UI in production */}
           </View>
         </View>
 
@@ -440,10 +363,14 @@ export default function Details({ route }: RouteParams) {
 
         {/* Play */}
         <Pressable
+          disabled={!matchedPlex}
           onPress={() => {
             if (matchedPlex || params.type === 'plex') {
               const rk = mappedRk || params.ratingKey;
-              if (rk) nav.navigate('Player', { type: 'plex', ratingKey: rk });
+              if (rk) {
+                console.log('[Details] Playing ratingKey:', rk);
+                nav.navigate('Player', { type: 'plex', ratingKey: rk });
+              }
             }
           }}
           style={{ marginHorizontal:16, marginTop:12, backgroundColor:'#fff', paddingVertical:12, borderRadius:12, alignItems:'center' }}
@@ -464,58 +391,29 @@ export default function Details({ route }: RouteParams) {
         ) : null}
 
         {/* Tabs (TV shows include Episodes; Movies omit Episodes) */}
-        <Tabs tab={tab} setTab={setTab} showEpisodes={meta?.type === 'show'} />
+        <Tabs tab={tab} setTab={setTab} showEpisodes={meta?.type === 'show' && (seasons.length > 0)} />
 
         {/* Content area */}
         <View style={{ marginTop:8 }}>
           {meta?.type === 'show' && tab === 'episodes' ? (
             <>
-              {onDeck ? (
-                <View style={{ marginHorizontal:16, marginTop:8, marginBottom:8, backgroundColor:'#1a1a1a', borderRadius:12, borderWidth:1, borderColor:'#2a2b30' }}>
-                  <Text style={{ color:'#fff', fontWeight:'700', paddingHorizontal:12, paddingTop:10, paddingBottom:6 }}>Continue watching</Text>
-                  <View style={{ paddingHorizontal:12, paddingBottom:12 }}>
-                    <EpisodeCard ep={onDeck} />
-                  </View>
-                </View>
-              ) : null}
               <SeasonSelector seasons={seasons} seasonKey={seasonKey} onChange={async (key)=> {
-                // Clear episodes and set new season - lazy loading effect will fetch
-                setEpisodes([]);
                 setSeasonKey(key);
-                setEpisodesLoading(true);
-                try {
-                  if (seasonSource === 'plex') {
-                    setEpisodes(await fetchPlexSeasonEpisodes(api, key));
-                  } else if (seasonSource === 'tmdb') {
-                    const tvId = route?.params?.id ? String(route?.params?.id) : undefined;
-                    if (tvId) setEpisodes(await fetchTmdbSeasonEpisodes(api, tvId, Number(key)));
-                  }
-                } finally { setEpisodesLoading(false); }
+                if (seasonSource === 'plex') {
+                  setEpisodes(await fetchPlexSeasonEpisodes(api, key));
+                } else if (seasonSource === 'tmdb') {
+                  const tvId = route?.params?.id ? String(route?.params?.id) : undefined;
+                  if (tvId) setEpisodes(await fetchTmdbSeasonEpisodes(api, tvId, Number(key)));
+                }
               }} />
-              {episodesLoading ? (
-                <View style={{ alignItems:'center', justifyContent:'center', paddingVertical:16 }}>
-                  <ActivityIndicator color="#fff" />
-                </View>
-              ) : (
-                episodes && episodes.length > 0 ? (
-                  <EpisodeList
-                    seasonTitle={seasons.find(s => String(s.ratingKey || s.key) === seasonKey)?.title || `Season ${seasonKey}`}
-                    episodes={episodes}
-                    api={api}
-                    tmdbMode={seasonSource==='tmdb'}
-                    tmdbId={route?.params?.id ? String(route?.params?.id) : undefined}
-                  />
-                ) : (
-                  <Text style={{ color:'#888', textAlign:'center', paddingVertical:24 }}>{noLocalSource ? 'No source found' : 'No episodes found'}</Text>
-                )
-              )}
+              <EpisodeList season={seasonKey} episodes={episodes} api={api} tmdbMode={seasonSource==='tmdb'} tmdbId={route?.params?.id ? String(route?.params?.id) : undefined} />
             </>
           ) : null}
           {tab === 'suggested' ? (
             <SuggestedRows api={api} meta={meta} routeParams={route?.params} />
           ) : null}
           {tab === 'details' ? (
-            <DetailsTab meta={meta} api={api} tmdbCast={tmdbCast} tmdbCrew={tmdbCrew} tmdbVote={tmdbVote} plexRatings={{ imdb: plexImdb, rtCritic: plexRtCritic, rtAudience: plexRtAudience }} />
+            <DetailsTab meta={meta} api={api} tmdbCast={tmdbCast} tmdbCrew={tmdbCrew} />
           ) : null}
         </View>
       </ScrollView>
@@ -555,13 +453,13 @@ function ActionIcon({ icon, label }: { icon: any; label: string }) {
   );
 }
 
-function EpisodeList({ seasonTitle, episodes, api, tmdbMode, tmdbId }: { seasonTitle: string; episodes: any[]; api: MobileApi; tmdbMode?: boolean; tmdbId?: string }) {
+function EpisodeList({ season, episodes, api, tmdbMode, tmdbId }: { season: string; episodes: any[]; api: MobileApi; tmdbMode?: boolean; tmdbId?: string }) {
   const authHeaders = api.token ? { Authorization: `Bearer ${api.token}` } : undefined;
   const nav: any = useNavigation();
-
+  
   return (
     <View style={{ marginTop: 12 }}>
-      <Text style={{ color:'#fff', fontSize:18, fontWeight:'800', marginHorizontal:16, marginBottom:8 }}>{seasonTitle}</Text>
+      <Text style={{ color:'#fff', fontSize:18, fontWeight:'800', marginHorizontal:16, marginBottom:8 }}>Season {season}</Text>
       {episodes.map((ep:any, idx:number) => {
         const path = tmdbMode ? undefined : (ep.thumb || ep.art);
         const img = tmdbMode
@@ -581,8 +479,8 @@ function EpisodeList({ seasonTitle, episodes, api, tmdbMode, tmdbId }: { seasonT
           <Pressable
             key={idx}
             onPress={() => {
-              // Only play Plex episodes (not TMDB-only)
               if (!tmdbMode && ep.ratingKey) {
+                console.log('[Details] Playing episode:', ep.ratingKey);
                 nav.navigate('Player', { type: 'plex', ratingKey: String(ep.ratingKey) });
               }
             }}
@@ -609,37 +507,6 @@ function EpisodeList({ seasonTitle, episodes, api, tmdbMode, tmdbId }: { seasonT
         );
       })}
     </View>
-  );
-}
-
-function EpisodeCard({ ep }: { ep: { id: string; title: string; overview?: string; image?: string; duration?: number; progress?: number } }) {
-  const nav: any = useNavigation();
-
-  return (
-    <Pressable
-      onPress={() => {
-        // Extract ratingKey from id (format: plex:12345)
-        const rk = ep.id.replace(/^plex:/, '');
-        if (rk) nav.navigate('Player', { type: 'plex', ratingKey: rk });
-      }}
-      style={{ flexDirection:'row', alignItems:'center' }}
-    >
-      <View style={{ width:160, height:90, borderRadius:10, overflow:'hidden', backgroundColor:'#222', marginRight:12 }}>
-        {ep.image && ExpoImage ? (
-          <ExpoImage source={{ uri: ep.image }} style={{ width:'100%', height:'100%' }} contentFit="cover" />
-        ) : null}
-        {typeof ep.progress === 'number' && ep.progress > 0 ? (
-          <View style={{ position:'absolute', left:0, right:0, bottom:0, height:4, backgroundColor:'#ffffff33' }}>
-            <View style={{ width: `${Math.min(100, Math.max(0, ep.progress))}%`, height:'100%', backgroundColor:'#fff' }} />
-          </View>
-        ) : null}
-      </View>
-      <View style={{ flex:1 }}>
-        <Text style={{ color:'#fff', fontWeight:'800' }}>{ep.title}</Text>
-        {ep.duration ? <Text style={{ color:'#bbb', marginTop:2 }}>{ep.duration}m</Text> : null}
-        {ep.overview ? <Text style={{ color:'#888', marginTop:4 }} numberOfLines={2}>{ep.overview}</Text> : null}
-      </View>
-    </Pressable>
   );
 }
 
@@ -745,17 +612,12 @@ function KeyValue({ k, v }: { k: string; v?: string }) {
   );
 }
 
-function RatingsRow({ meta, tmdbVote, plex }: { meta: any; tmdbVote?: number | null; plex?: { imdb?: number|null; rtCritic?: number|null; rtAudience?: number|null } }) {
-  // Parse ratings from Plex metadata if available (or override from backend)
+function RatingsRow({ meta }: { meta: any }) {
+  // Parse ratings from Plex metadata if available
   const ratings: any[] = Array.isArray(meta?.Rating) ? meta.Rating : [];
   let imdb: number | undefined;
   let rtCritic: number | undefined;
   let rtAudience: number | undefined;
-  if (plex) {
-    if (plex.imdb != null) imdb = Number(plex.imdb);
-    if (plex.rtCritic != null) rtCritic = Number(plex.rtCritic);
-    if (plex.rtAudience != null) rtAudience = Number(plex.rtAudience);
-  }
   try {
     ratings.forEach((r:any) => {
       const img = String(r?.image || '').toLowerCase();
@@ -770,7 +632,7 @@ function RatingsRow({ meta, tmdbVote, plex }: { meta: any; tmdbVote?: number | n
   if (!imdb && typeof meta?.rating === 'number') imdb = meta.rating;
   if (!rtAudience && typeof meta?.audienceRating === 'number') rtAudience = Math.round(meta.audienceRating * 10);
 
-  if (!imdb && !rtCritic && !rtAudience && (tmdbVote == null)) return null;
+  if (!imdb && !rtCritic && !rtAudience) return null;
   return (
     <View style={{ flexDirection:'row', alignItems:'center', marginTop:8, marginHorizontal:16 }}>
       {typeof imdb === 'number' ? (
@@ -789,12 +651,6 @@ function RatingsRow({ meta, tmdbVote, plex }: { meta: any; tmdbVote?: number | n
         <View style={{ flexDirection:'row', alignItems:'center' }}>
           <Ionicons name="people-outline" size={16} color="#90caf9" />
           <Text style={{ color:'#fff', fontWeight:'700', marginLeft:6 }}>Audience {rtAudience}%</Text>
-        </View>
-      ) : null}
-      {!imdb && !rtCritic && !rtAudience && (tmdbVote != null) ? (
-        <View style={{ flexDirection:'row', alignItems:'center', marginRight:16 }}>
-          <Ionicons name="film-outline" size={16} color="#9aa6b2" />
-          <Text style={{ color:'#fff', fontWeight:'700', marginLeft:6 }}>TMDB {tmdbVote.toFixed(1)}</Text>
         </View>
       ) : null}
     </View>
@@ -885,25 +741,19 @@ function TechSpecs({ meta }: { meta:any }) {
 
 function Collections({ meta }: { meta:any }) {
   const cols: any[] = Array.isArray(meta?.Collection) ? meta.Collection : [];
-  const tmdbCol = meta?.tmdbCollectionName;
-  if (!cols.length && !tmdbCol) return null;
+  if (!cols.length) return null;
   return (
     <View style={{ flexDirection:'row', flexWrap:'wrap', paddingHorizontal:12, marginTop:8 }}>
       {cols.map((c:any, idx:number) => (
-        <View key={`plexcol-${idx}`} style={{ margin:4, paddingHorizontal:10, paddingVertical:6, borderRadius:999, backgroundColor:'#1a1b20', borderWidth:1, borderColor:'#2a2b30' }}>
+        <View key={idx} style={{ margin:4, paddingHorizontal:10, paddingVertical:6, borderRadius:999, backgroundColor:'#1a1b20', borderWidth:1, borderColor:'#2a2b30' }}>
           <Text style={{ color:'#fff', fontWeight:'700' }}>{c.tag || c.title}</Text>
         </View>
       ))}
-      {!cols.length && tmdbCol ? (
-        <View key={`tmdbcol`} style={{ margin:4, paddingHorizontal:10, paddingVertical:6, borderRadius:999, backgroundColor:'#1a1b20', borderWidth:1, borderColor:'#2a2b30' }}>
-          <Text style={{ color:'#fff', fontWeight:'700' }}>{tmdbCol}</Text>
-        </View>
-      ) : null}
     </View>
   );
 }
 
-function DetailsTab({ meta, api, tmdbCast, tmdbCrew, tmdbVote, plexRatings }: { meta:any; api: MobileApi; tmdbCast?: Array<{ name: string; profile_path?: string }>; tmdbCrew?: Array<{ name: string; job?: string }>; tmdbVote?: number | null; plexRatings?: { imdb?: number|null; rtCritic?: number|null; rtAudience?: number|null } }) {
+function DetailsTab({ meta, api, tmdbCast, tmdbCrew }: { meta:any; api: MobileApi; tmdbCast?: Array<{ name: string; profile_path?: string }>; tmdbCrew?: Array<{ name: string; job?: string }> }) {
   const guids: string[] = Array.isArray(meta?.Guid) ? meta.Guid.map((g:any)=> String(g.id||'')) : [];
   const imdbId = guids.find(x=> x.startsWith('imdb://'))?.split('://')[1];
   const tmdbId = guids.find(x=> x.includes('tmdb://') || x.includes('themoviedb://'))?.split('://')[1];
@@ -911,7 +761,7 @@ function DetailsTab({ meta, api, tmdbCast, tmdbCrew, tmdbVote, plexRatings }: { 
   return (
     <View>
       <SectionHeader title="Ratings" />
-      <RatingsRow meta={meta} tmdbVote={tmdbVote} plex={plexRatings} />
+      <RatingsRow meta={meta} />
 
       <SectionHeader title="Cast" />
       <CastScroller meta={meta} api={api} tmdbCast={tmdbCast} />
@@ -944,15 +794,14 @@ function SeasonSelector({ seasons, seasonKey, onChange }: { seasons:any[]; seaso
         {seasons.map((s:any, idx:number) => {
           const key = String(s.ratingKey || s.key || idx);
           const active = key === seasonKey;
-          const label = s.title || `Season ${s.index || (idx+1)}`;
-          console.log('[SeasonSelector] Season button:', { key, label, active, seasonKey });
           return (
             <Pressable key={key} onPress={()=> onChange(key)} style={{ marginRight:10, paddingHorizontal:12, paddingVertical:8, borderRadius:999, backgroundColor: active? '#ffffff22' : '#1a1b20', borderWidth:1, borderColor: active? '#ffffff' : '#2a2b30' }}>
-              <Text style={{ color:'#fff', fontWeight:'700' }}>{label}</Text>
+              <Text style={{ color:'#fff', fontWeight:'700' }}>{s.title || `Season ${s.index || (idx+1)}`}</Text>
             </Pressable>
           );
         })}
       </ScrollView>
+      
     </View>
   );
 }

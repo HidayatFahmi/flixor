@@ -46,14 +46,18 @@ export default function Home({ api }: { api: MobileApi }) {
   const [heroLogo, setHeroLogo] = useState<string | undefined>(undefined);
   const [heroPick, setHeroPick] = useState<HeroPick | null>(null);
   const y = React.useRef(new Animated.Value(0)).current;
+  const showPillsAnim = React.useRef(new Animated.Value(1)).current;
   const barHeight = useTopBarStore(s => s.height || 90);
   const isFocused = useIsFocused();
+  const lastScrollY = useRef(0);
+  const scrollDirection = useRef<'up'|'down'>('down');
 
-  // Set scrollY immediately on mount and when regaining focus
+  // Set scrollY and showPills immediately on mount and when regaining focus
   React.useLayoutEffect(() => {
     if (isFocused) {
-      console.log('[Home] Setting scrollY for Home screen');
+      console.log('[Home] Setting scrollY and showPills for Home screen');
       TopBarStore.setScrollY(y);
+      TopBarStore.setShowPills(showPillsAnim);
     }
   }, [isFocused, y]);
 
@@ -88,9 +92,55 @@ export default function Home({ api }: { api: MobileApi }) {
       onClose: () => {
         console.log('[Home] Close button clicked, resetting to all');
         setTab('all');
+      },
+      onSearch: () => {
+        console.log('[Home] Opening search');
+        nav.navigate('Search');
       }
     });
   }, [welcome, tab, nav, isFocused]);
+
+  // Helper function to pick hero - defined early so effects can use it
+  const pickHero = (): HeroPick => {
+    // Pick randomly from Popular on Plex
+    if (popularOnPlexTmdb.length > 0) {
+      const randomIndex = Math.floor(Math.random() * Math.min(popularOnPlexTmdb.length, 8));
+      const pick = popularOnPlexTmdb[randomIndex];
+      
+      // Extract TMDB ID from pick.id (format: "tmdb:tv:12345" or "tmdb:movie:67890")
+      let tmdbId: string | undefined;
+      let mediaType: 'movie'|'tv' | undefined;
+      if (pick.id && pick.id.startsWith('tmdb:')) {
+        const parts = pick.id.split(':');
+        mediaType = parts[1] as 'movie'|'tv';
+        tmdbId = parts[2];
+      }
+      
+      return {
+        title: pick.title,
+        image: pick.image,
+        subtitle: 'Watch the Limited Series now',
+        tmdbId,
+        mediaType,
+      };
+    }
+    
+    // Fallback to trending if Popular on Plex is empty
+    const fallback = [...trendingMovies, ...trendingShows];
+    if (fallback.length > 0) {
+      const randomIndex = Math.floor(Math.random() * Math.min(fallback.length, 6));
+      const pick = fallback[randomIndex];
+      const b = pick?.movie?.backdrop_path || pick?.show?.backdrop_path;
+      const t = pick?.movie?.title || pick?.show?.title || pick?.show?.name;
+      return {
+        title: t || 'Featured',
+        image: b ? `https://image.tmdb.org/t/p/w780${b}` : undefined,
+        subtitle: 'Watch now',
+      };
+    }
+    
+    return { title: 'Featured', image: undefined, subtitle: undefined };
+  };
 
   useEffect(() => {
     (async () => {
@@ -116,6 +166,7 @@ export default function Home({ api }: { api: MobileApi }) {
         try { setRecent(val(3, [])); } catch {}
         try {
           const tv = val(4, []);
+          console.log('[Home] TMDB trending TV fetched:', tv.length, 'items');
           setPopularOnPlexTmdb(tv.slice(0, 8));
           setTrendingNow(tv.slice(8, 16));
         } catch {}
@@ -163,23 +214,36 @@ export default function Home({ api }: { api: MobileApi }) {
 
   // Fetch logo for hero once popularOnPlexTmdb is loaded
   useEffect(() => {
-    if (popularOnPlexTmdb.length === 0) return;
+    console.log('[Home] Hero effect triggered, popularOnPlexTmdb length:', popularOnPlexTmdb.length);
+    if (popularOnPlexTmdb.length === 0) {
+      console.log('[Home] No popularOnPlexTmdb items yet, skipping hero');
+      return;
+    }
     
+    console.log('[Home] Starting hero selection async...');
     (async () => {
-      const hero = pickHero();
-      setHeroPick(hero);
-      
-      if (hero.tmdbId && hero.mediaType) {
-        try {
+      try {
+        const hero = pickHero();
+        console.log('[Home] Picked hero:', hero.title, 'tmdbId:', hero.tmdbId, 'has image:', !!hero.image);
+        setHeroPick(hero);
+        
+        if (hero.tmdbId && hero.mediaType) {
+          console.log('[Home] Fetching logo for:', hero.mediaType, hero.tmdbId);
           const imgs = await api.get(`/api/tmdb/${hero.mediaType}/${encodeURIComponent(hero.tmdbId)}/images?language=en,null`);
           const logos = (imgs?.logos || []) as any[];
+          console.log('[Home] Logos found:', logos.length);
           const logo = logos.find((l:any)=> l.iso_639_1 === 'en') || logos[0];
           if (logo?.file_path) {
+            console.log('[Home] Setting hero logo:', logo.file_path);
             setHeroLogo(`https://image.tmdb.org/t/p/w500${logo.file_path}`);
+          } else {
+            console.log('[Home] No logo found for hero');
           }
-        } catch (e) {
-          console.log('[Home] Failed to fetch hero logo:', e);
+        } else {
+          console.log('[Home] No TMDB ID for hero, logo unavailable');
         }
+      } catch (e) {
+        console.log('[Home] Error in hero selection:', e);
       }
     })();
   }, [popularOnPlexTmdb]);
@@ -239,47 +303,6 @@ export default function Home({ api }: { api: MobileApi }) {
   };
 
   type HeroPick = { title: string; image?: string; subtitle?: string; tmdbId?: string; mediaType?: 'movie'|'tv' };
-  
-  const pickHero = (): HeroPick => {
-    // Pick randomly from Popular on Plex
-    if (popularOnPlexTmdb.length > 0) {
-      const randomIndex = Math.floor(Math.random() * Math.min(popularOnPlexTmdb.length, 8));
-      const pick = popularOnPlexTmdb[randomIndex];
-      
-      // Extract TMDB ID from pick.id (format: "tmdb:tv:12345" or "tmdb:movie:67890")
-      let tmdbId: string | undefined;
-      let mediaType: 'movie'|'tv' | undefined;
-      if (pick.id && pick.id.startsWith('tmdb:')) {
-        const parts = pick.id.split(':');
-        mediaType = parts[1] as 'movie'|'tv';
-        tmdbId = parts[2];
-      }
-      
-      return {
-        title: pick.title,
-        image: pick.image,
-        subtitle: 'Watch the Limited Series now',
-        tmdbId,
-        mediaType,
-      };
-    }
-    
-    // Fallback to trending if Popular on Plex is empty
-    const fallback = [...trendingMovies, ...trendingShows];
-    if (fallback.length > 0) {
-      const randomIndex = Math.floor(Math.random() * Math.min(fallback.length, 6));
-      const pick = fallback[randomIndex];
-      const b = pick?.movie?.backdrop_path || pick?.show?.backdrop_path;
-      const t = pick?.movie?.title || pick?.show?.title || pick?.show?.name;
-      return {
-        title: t || 'Featured',
-        image: b ? `https://image.tmdb.org/t/p/w780${b}` : undefined,
-        subtitle: 'Watch now',
-      };
-    }
-    
-    return { title: 'Featured', image: undefined, subtitle: undefined };
-  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#1b0a10' }}>
@@ -312,7 +335,40 @@ export default function Home({ api }: { api: MobileApi }) {
         scrollEventThrottle={16}
         onScroll={Animated.event([
           { nativeEvent: { contentOffset: { y } } }
-        ], { useNativeDriver: false })}
+        ], { 
+          useNativeDriver: false,
+          listener: (e: any) => {
+            const currentY = e.nativeEvent.contentOffset.y;
+            const delta = currentY - lastScrollY.current;
+            
+            // Determine scroll direction
+            if (delta > 5) {
+              // Scrolling down - hide pills with smooth spring
+              if (scrollDirection.current !== 'down') {
+                scrollDirection.current = 'down';
+                Animated.spring(showPillsAnim, {
+                  toValue: 0,
+                  useNativeDriver: true,
+                  tension: 60,
+                  friction: 10,
+                }).start();
+              }
+            } else if (delta < -5) {
+              // Scrolling up - show pills with smooth spring
+              if (scrollDirection.current !== 'up') {
+                scrollDirection.current = 'up';
+                Animated.spring(showPillsAnim, {
+                  toValue: 1,
+                  useNativeDriver: true,
+                  tension: 60,
+                  friction: 10,
+                }).start();
+              }
+            }
+            
+            lastScrollY.current = currentY;
+          }
+        })}
       >
       {heroPick ? (
         <HeroCard hero={{ title: heroPick.title, subtitle: heroPick.subtitle, imageUri: heroPick.image, logoUri: heroLogo }} authHeaders={authHeaders} onPlay={()=>{}} onAdd={()=>{}} />

@@ -9,8 +9,10 @@ type State = {
   showFilters: boolean;
   selected: Pill;
   scrollY?: Animated.Value;
+  showPills?: Animated.Value;
   onNavigateLibrary?: (tab: 'movies'|'shows')=>void;
   onClose?: ()=>void;
+  onSearch?: ()=>void;
   height: number;
 };
 
@@ -22,8 +24,10 @@ const state: State = {
   showFilters: true, // default to true so pills are visible
   selected: 'all',
   scrollY: undefined,
+  showPills: undefined,
   onNavigateLibrary: undefined,
   onClose: undefined,
+  onSearch: undefined,
   height: 90,
 };
 
@@ -40,13 +44,17 @@ export const TopBarStore = {
   setSelected(p: Pill) { if (state.selected !== p) { state.selected = p; emit(); } },
   setScrollY(y?: Animated.Value) { 
     // Don't emit on scrollY change since Animated.Value changes don't need React updates
-    // The TopAppBar reads scrollY directly and interpolates it
     state.scrollY = y; 
   },
-  setHandlers(h: { onNavigateLibrary?: (tab:'movies'|'shows')=>void; onClose?: ()=>void }) {
+  setShowPills(v?: Animated.Value) {
+    // Don't emit - Animated.Value changes don't need React updates
+    state.showPills = v;
+  },
+  setHandlers(h: { onNavigateLibrary?: (tab:'movies'|'shows')=>void; onClose?: ()=>void; onSearch?: ()=>void }) {
     let changed = false;
     if (state.onNavigateLibrary !== h.onNavigateLibrary) { state.onNavigateLibrary = h.onNavigateLibrary; changed = true; }
     if (state.onClose !== h.onClose) { state.onClose = h.onClose; changed = true; }
+    if (state.onSearch !== h.onSearch) { state.onSearch = h.onSearch; changed = true; }
     if (changed) emit();
   },
   setHeight(h: number) { if (state.height !== h) { state.height = h; emit(); } },
