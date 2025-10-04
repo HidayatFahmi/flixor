@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiCache } from './cache';
 
 export type SessionInfo = {
   authenticated: boolean;
@@ -45,11 +46,22 @@ export class MobileApi {
     return { ...h, ...(additional || {}) };
   }
 
-  async get(path: string, extraHeaders?: Record<string, string>) {
+  async get(path: string, extraHeaders?: Record<string, string>, options?: { skipCache?: boolean }) {
     const url = `${this.baseUrl}${path}`;
-    const res = await fetch(url, { headers: this.headers(extraHeaders) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+
+    // Skip cache if requested or for real-time endpoints
+    if (options?.skipCache) {
+      const res = await fetch(url, { headers: this.headers(extraHeaders) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    // Use cache with automatic deduplication
+    return apiCache.getOrFetch(path, async () => {
+      const res = await fetch(url, { headers: this.headers(extraHeaders) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    });
   }
 
   async post(path: string, body?: any, extraHeaders?: Record<string, string>) {
@@ -116,6 +128,28 @@ export class MobileApi {
     const { q, type = 'all', page = 1, pageSize = 30 } = opts;
     const t = type === 'all' ? '' : `&type=${type}`;
     return this.get(`/api/plex/search?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}${t}`);
+  }
+
+  // --- Cache management ---
+  async invalidateCache(path: string) {
+    return apiCache.invalidate(path);
+  }
+
+  async invalidateCachePattern(pattern: string) {
+    return apiCache.invalidatePattern(pattern);
+  }
+
+  async clearCache() {
+    return apiCache.clear();
+  }
+
+  // Prefetch data in background (fire and forget)
+  prefetch(path: string, extraHeaders?: Record<string, string>) {
+    apiCache.prefetch(path, async () => {
+      const res = await fetch(`${this.baseUrl}${path}`, { headers: this.headers(extraHeaders) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    });
   }
 }
 

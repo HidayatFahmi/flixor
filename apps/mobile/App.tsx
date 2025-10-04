@@ -18,6 +18,9 @@ import { MobileApi } from './src/api/client';
 import My from './src/screens/My';
 import * as Haptics from 'expo-haptics';
 
+// Note: expo-image uses disk cache by default (cachePolicy="disk" or "memory-disk")
+// Cache limits are managed by the OS and expo-image internally
+
 type RootStackParamList = {
   Onboarding: undefined;
   Login: undefined;

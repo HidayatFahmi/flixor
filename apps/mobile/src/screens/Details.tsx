@@ -584,12 +584,16 @@ function SuggestedRows({ api, meta, routeParams }: { api: MobileApi; meta: any; 
     <View style={{ marginLeft: 12 }}>
       {recs.length > 0 && (
         <Row title="Recommended" items={recs}
-          getImageUri={getUri} getTitle={getTitle} authHeaders={authHeaders} onItemPress={onPress}
+          getImageUri={getUri} getTitle={getTitle} authHeaders={authHeaders}
+          onItemPress={onPress}
+          onTitlePress={() => recs[0] && onPress(recs[0])}
         />
       )}
       {similar.length > 0 && (
         <Row title="More Like This" items={similar}
-          getImageUri={getUri} getTitle={getTitle} authHeaders={authHeaders} onItemPress={onPress}
+          getImageUri={getUri} getTitle={getTitle} authHeaders={authHeaders}
+          onItemPress={onPress}
+          onTitlePress={() => similar[0] && onPress(similar[0])}
         />
       )}
     </View>

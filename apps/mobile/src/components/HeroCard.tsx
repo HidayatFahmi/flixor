@@ -2,9 +2,10 @@ import React from 'react';
 import { View, Text, Pressable, Alert, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image as ExpoImage } from 'expo-image';
 
-let ExpoImage: any = null;
-try { ExpoImage = require('expo-image').Image; } catch {}
+// Blurhash for hero images
+const HERO_BLURHASH = 'L6PZfSi_.AyE_3t7t7R**0o#DgR4';
 
 type Hero = {
   title: string;
@@ -19,8 +20,16 @@ export default function HeroCard({ hero, authHeaders, onPlay, onAdd }: { hero: H
       <View style={{ borderRadius: 12, overflow: 'hidden', backgroundColor: '#111', shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 8 }}>
         {/* Image container - wider aspect ratio like Netflix hero cards */}
         <View style={{ width: '100%', aspectRatio: 0.78 }}>
-          {hero.imageUri && ExpoImage ? (
-            <ExpoImage source={{ uri: hero.imageUri, headers: authHeaders }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+          {hero.imageUri ? (
+            <ExpoImage
+              source={{ uri: hero.imageUri, headers: authHeaders }}
+              placeholder={{ blurhash: HERO_BLURHASH }}
+              style={{ width: '100%', height: '100%' }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              priority="high"
+              transition={300}
+            />
           ) : (
             <View style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
               <Text style={{ color:'#666' }}>No Artwork</Text>
@@ -40,12 +49,14 @@ export default function HeroCard({ hero, authHeaders, onPlay, onAdd }: { hero: H
         {/* Content overlay at bottom */}
         <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 20 }}>
           {/* Logo or Title */}
-          {hero.logoUri && ExpoImage ? (
+          {hero.logoUri ? (
             <View style={{ marginBottom: 12, alignItems: 'center', width: '100%' }}>
-              <ExpoImage 
-                source={{ uri: hero.logoUri, headers: authHeaders }} 
-                style={{ width: 240, height: 80 }} 
+              <ExpoImage
+                source={{ uri: hero.logoUri, headers: authHeaders }}
+                style={{ width: 240, height: 80 }}
                 contentFit="contain"
+                cachePolicy="memory-disk"
+                transition={200}
               />
             </View>
           ) : (

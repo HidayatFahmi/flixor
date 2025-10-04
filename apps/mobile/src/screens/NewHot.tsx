@@ -37,8 +37,17 @@ export default function NewHot() {
   React.useLayoutEffect(() => {
     if (isFocused) {
       TopBarStore.setScrollY(y);
+
+      // Prefetch all tab content in background
+      if (api) {
+        console.log('[NewHot] Prefetching tab content');
+        api.prefetch('/api/tmdb/movie/upcoming?region=US');
+        api.prefetch('/api/tmdb/trending/all/week');
+        api.prefetch('/api/tmdb/trending/tv/week');
+        api.prefetch('/api/tmdb/trending/movie/week');
+      }
     }
-  }, [isFocused, y]);
+  }, [isFocused, y, api]);
 
   useEffect(() => {
     if (!isFocused) return;

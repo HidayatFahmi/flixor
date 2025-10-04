@@ -53,6 +53,15 @@ export default function Search() {
     (async () => {
       const a = await MobileApi.load();
       setApi(a);
+
+      // Prefetch popular search queries
+      if (a) {
+        console.log('[Search] Prefetching popular content');
+        a.prefetch('/api/tmdb/trending/movie/week');
+        a.prefetch('/api/tmdb/trending/tv/week');
+        a.prefetch('/api/tmdb/discover/movie?sort_by=popularity.desc&page=1');
+      }
+
       // Load recommended/trending for empty state as vertical list
       if (a) {
         try {

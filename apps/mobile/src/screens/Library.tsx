@@ -52,7 +52,19 @@ export default function Library() {
     console.log('[Library] Setting scrollY and showPills for Library screen');
     TopBarStore.setScrollY(y);
     TopBarStore.setShowPills(showPillsAnim);
-  }, [y]);
+
+    // Prefetch next pages and alternate type in background
+    if (api) {
+      console.log('[Library] Prefetching next pages');
+      api.prefetch(`/api/plex/library/items?page=2&pageSize=30&type=${mType === 'all' ? '' : mType}`);
+      // Prefetch the opposite tab content
+      if (mType === 'movie') {
+        api.prefetch('/api/plex/library/items?page=1&pageSize=30&type=show');
+      } else if (mType === 'show') {
+        api.prefetch('/api/plex/library/items?page=1&pageSize=30&type=movie');
+      }
+    }
+  }, [y, api, mType]);
 
   // Push top bar updates via effects (avoid setState in render)
   useEffect(() => {

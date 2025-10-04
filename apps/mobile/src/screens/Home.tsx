@@ -72,8 +72,15 @@ export default function Home({ api }: { api: MobileApi }) {
         console.log('[Home] Returning to Home, resetting tab to all');
         setTab('all');
       }
+
+      // Prefetch likely next screens in background
+      console.log('[Home] Prefetching Library and NewHot data');
+      api.prefetch('/api/plex/library/items?page=1&pageSize=30&type=movie');
+      api.prefetch('/api/plex/library/items?page=1&pageSize=30&type=show');
+      api.prefetch('/api/tmdb/movie/upcoming?region=US');
+      api.prefetch('/api/tmdb/trending/all/week');
     }
-  }, [isFocused]);
+  }, [isFocused, api]);
 
   // Push top bar updates via effects - include isFocused to re-establish handlers when screen regains focus
   useEffect(() => {
