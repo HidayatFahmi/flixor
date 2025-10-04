@@ -140,7 +140,6 @@ export default function Settings() {
           <L label="Plex URL"><input value={plexUrl} onChange={(e) => setPlexUrl(e.target.value)} placeholder="https://app.plex.tv" className="input" /></L>
           <L label="Plex Token"><input value={plexToken} onChange={(e) => setPlexToken(e.target.value)} placeholder="" className="input" /></L>
           <L label="TMDB API Key"><input value={tmdbKey} onChange={(e) => setTmdbKey(e.target.value)} className="input" /></L>
-          <L label="Plex Account Token (Watchlist)"><input value={plexTvToken} onChange={(e) => setPlexTvToken(e.target.value)} placeholder="Plex.tv account token" className="input" /></L>
           <L label="Watchlist Provider">
             <select
               className="input"

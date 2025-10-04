@@ -14,11 +14,12 @@ export default function GlobalTopAppBar() {
   const onNavigateLibrary = useTopBarStore((st) => st.onNavigateLibrary);
   const onSearch = useTopBarStore((st) => st.onSearch);
   const compact = useTopBarStore((st) => st.compact);
+  const customFilters = useTopBarStore((st) => st.customFilters);
   
   // Re-render when any tracked value changes to pick up latest scrollY
   React.useEffect(() => {
     forceUpdate();
-  }, [visible, username, showFilters, selected, compact]);
+  }, [visible, username, showFilters, selected, compact, customFilters]);
   
   // Read scrollY and showPills directly from store (don't cause re-renders)
   const scrollY = TopBarStore.getState().scrollY;
@@ -38,6 +39,7 @@ export default function GlobalTopAppBar() {
       scrollY={scrollY}
       showPills={showPills}
       compact={compact}
+      customFilters={customFilters}
       onHeightChange={(h)=> TopBarStore.setHeight(h)}
     />
   );

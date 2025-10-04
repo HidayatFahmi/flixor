@@ -8,7 +8,7 @@ import { Pressable } from 'react-native';
 import Pills from './Pills';
 import { LinearGradient } from 'expo-linear-gradient';
 
-export default function TopAppBar({ visible, username, showFilters, selected, onChange, onOpenCategories, onNavigateLibrary, onClose, onSearch, scrollY, onHeightChange, showPills, compact }: {
+export default function TopAppBar({ visible, username, showFilters, selected, onChange, onOpenCategories, onNavigateLibrary, onClose, onSearch, scrollY, onHeightChange, showPills, compact, customFilters }: {
   visible: boolean;
   username?: string;
   showFilters?: boolean;
@@ -22,18 +22,18 @@ export default function TopAppBar({ visible, username, showFilters, selected, on
   onHeightChange?: (h:number)=>void;
   showPills?: Animated.Value; // 0=hidden, 1=visible
   compact?: boolean; // Smaller header for screens like NewHot
+  customTitle?: string;
+  customFilters?: React.ReactNode; // Custom filter content (e.g., tab pills for NewHot)
 }) {
   const insets = useSafeAreaInsets();
   const AnimatedBlurView: any = Animated.createAnimatedComponent(BlurView);
 
   // Compute heights - use smaller base height in compact mode
-  const baseHeight = compact ? 36 : 44;
+  const baseHeight = 44;
   const pillsHeight = 48;
   // In compact mode (NewHot), always use collapsed height; in normal mode respect showFilters
   const collapsedHeight = insets.top + baseHeight + 4;
-  const expandedHeight = compact 
-    ? collapsedHeight // Compact mode: no pills space ever
-    : (insets.top + baseHeight + (showFilters ? pillsHeight + 8 : 4));
+  const expandedHeight = (insets.top + baseHeight + pillsHeight + 8);
 
   // Animated height - interpolate from showPills (uses spring animation from screens)
   const heightAnim = useRef(new Animated.Value(expandedHeight)).current;
@@ -111,8 +111,12 @@ export default function TopAppBar({ visible, username, showFilters, selected, on
               </Pressable>
             </View>
           </View>
-          {/* Pills row – animated visibility with slide up/down */}
-          {showFilters ? (
+          {/* Pills row – animated visibility with slide up/down OR custom filters */}
+          {customFilters ? (
+            <View style={{ paddingVertical: 4 }}>
+              {customFilters}
+            </View>
+          ) : showFilters ? (
             <Animated.View style={{ 
               opacity: pillsOpacity, 
               transform: [{ translateY: pillsTranslateY }],

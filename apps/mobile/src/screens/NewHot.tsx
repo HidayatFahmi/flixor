@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { MobileApi } from '../api/client';
 import { TopBarStore, useTopBarStore } from '../components/TopBarStore';
+import * as Haptics from 'expo-haptics';
 
 type TabType = 'coming-soon' | 'everyones-watching' | 'top10-shows' | 'top10-movies';
 
@@ -42,17 +43,46 @@ export default function NewHot() {
   useEffect(() => {
     if (!isFocused) return;
     
+    // Render tab pills inside TopAppBar
+    const tabPills = (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, alignItems: 'center'}}
+        style={{ flexGrow: 0 }}
+      >
+        {tabs.map((tab) => (
+          <TabPill
+            key={tab.id}
+            active={activeTab === tab.id}
+            label={tab.label}
+            onPress={() => setActiveTab(tab.id)}
+          />
+        ))}
+      </ScrollView>
+    );
+    
     TopBarStore.setVisible(true);
-    TopBarStore.setShowFilters(false); // No pills on NewHot
+    TopBarStore.setShowFilters(false); // No default pills
     TopBarStore.setUsername('New & Hot');
     TopBarStore.setSelected('all');
-    TopBarStore.setCompact(true); // Use compact mode for NewHot
+    TopBarStore.setCompact(false); // Use compact mode for NewHot
+    TopBarStore.setCustomFilters(tabPills); // Pass custom tab pills
     TopBarStore.setHandlers({ 
       onNavigateLibrary: undefined,
       onClose: undefined,
-      onSearch: () => nav.navigate('Search')
+      onSearch: () => {
+        // Navigate to HomeTab first, then to Search
+        nav.navigate('HomeTab', { screen: 'Search' });
+      }
     });
-  }, [isFocused, nav]);
+    
+    // Cleanup when leaving screen
+    return () => {
+      TopBarStore.setCustomFilters(undefined);
+      TopBarStore.setCompact(false);
+    };
+  }, [isFocused, nav, activeTab]);
 
   useEffect(() => {
     (async () => {
@@ -163,11 +193,18 @@ export default function NewHot() {
     }
   };
 
-  const TabPill = ({ active, label, onPress }: { active?: boolean; label: string; onPress?: () => void }) => (
-    <Pressable onPress={onPress} style={[styles.tabPill, active && styles.tabPillActive]}>
-      <Text style={[styles.tabPillText, { color: active ? '#000' : '#fff' }]}>{label}</Text>
-    </Pressable>
-  );
+  const TabPill = ({ active, label, onPress }: { active?: boolean; label: string; onPress?: () => void }) => {
+    const handlePress = () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPress?.();
+    };
+
+    return (
+      <Pressable onPress={handlePress} style={[styles.tabPill, active && styles.tabPillActive]}>
+        <Text style={[styles.tabPillText, { color: active ? '#000' : '#fff' }]}>{label}</Text>
+      </Pressable>
+    );
+  };
 
   const tabs = [
     { id: 'coming-soon' as const, label: '🎁 Coming Soon' },
@@ -185,36 +222,19 @@ export default function NewHot() {
         style={StyleSheet.absoluteFillObject}
       />
 
-      <View style={{ flex: 1, paddingTop: barHeight }}>
+      <View style={{ flex: 1 }}>
         {/* TopAppBar is rendered globally above this content */}
 
-        {/* Tabs */}
-        <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ alignItems: 'center' }}
-          >
-            {tabs.map((tab) => (
-              <TabPill
-                key={tab.id}
-                active={activeTab === tab.id}
-                label={tab.label}
-                onPress={() => setActiveTab(tab.id)}
-              />
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Content */}
+        {/* Scrollable content - tab pills are now in TopAppBar */}
         <Animated.ScrollView 
           style={{ flex: 1 }} 
-          contentContainerStyle={{ paddingBottom: 80 }}
+          contentContainerStyle={{ paddingTop: barHeight, paddingBottom: 80 }}
           scrollEventThrottle={16}
           onScroll={Animated.event([
             { nativeEvent: { contentOffset: { y } } }
           ], { useNativeDriver: false })}
         >
+          {/* Content */}
           {loading ? (
             <View style={{ alignItems: 'center', paddingTop: 40 }}>
               <ActivityIndicator color="#fff" size="large" />
@@ -265,12 +285,6 @@ export default function NewHot() {
                         </Text>
                       )}
                     </View>
-
-                    {/* Remind Me Button */}
-                    <Pressable style={styles.remindButton}>
-                      <Ionicons name="notifications-outline" size={24} color="#fff" />
-                      <Text style={styles.remindText}>Remind Me</Text>
-                    </Pressable>
                   </View>
                 </Pressable>
               ))}

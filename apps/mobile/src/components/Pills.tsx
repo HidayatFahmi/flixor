@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { View, Text, Pressable, Animated, Easing, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 
 type Props = {
   selected: 'all'|'movies'|'shows';
@@ -11,8 +12,13 @@ type Props = {
 };
 
 function Pill({ active, label, onPress }: { active?: boolean; label: string; onPress?: () => void }) {
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress?.();
+  };
+
   return (
-    <Pressable onPress={onPress} style={{
+    <Pressable onPress={handlePress} style={{
       paddingHorizontal: 14,
       paddingVertical: 8,
       borderRadius: 999,
@@ -63,7 +69,7 @@ export default function Pills({ selected, onChange, onOpenCategories, onClose }:
       
       {selected === 'shows' && (
         <>
-          <Pressable onPress={() => { onClose && onClose(); onChange('all'); }} style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#4a4a4a', backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
+          <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose && onClose(); onChange('all'); }} style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#4a4a4a', backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
             <Ionicons name="close-outline" color="#fff" size={20} />
           </Pressable>
           <Pill label="Shows" active={true} onPress={() => onChange('shows')} />
@@ -74,7 +80,7 @@ export default function Pills({ selected, onChange, onOpenCategories, onClose }:
       
       {selected === 'movies' && (
         <>
-          <Pressable onPress={() => { onClose && onClose(); onChange('all'); }} style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#4a4a4a', backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
+          <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose && onClose(); onChange('all'); }} style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#4a4a4a', backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
             <Ionicons name="close-outline" color="#fff" size={20} />
           </Pressable>
           <Pill label="Movies" active={true} onPress={() => onChange('movies')} />
@@ -83,7 +89,7 @@ export default function Pills({ selected, onChange, onOpenCategories, onClose }:
         </>
       )}
       
-      <Pressable onPress={onOpenCategories} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: '#4a4a4a', backgroundColor: 'transparent' }}>
+      <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onOpenCategories?.(); }} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: '#4a4a4a', backgroundColor: 'transparent' }}>
         <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Categories</Text>
         <Ionicons name="chevron-down" color="#fff" size={16} />
       </Pressable>

@@ -14,6 +14,7 @@ type State = {
   onClose?: ()=>void;
   onSearch?: ()=>void;
   compact?: boolean;
+  customFilters?: React.ReactNode;
   height: number;
 };
 
@@ -30,6 +31,7 @@ const state: State = {
   onClose: undefined,
   onSearch: undefined,
   compact: false,
+  customFilters: undefined,
   height: 90,
 };
 
@@ -45,6 +47,7 @@ export const TopBarStore = {
   setShowFilters(v: boolean) { if (state.showFilters !== v) { state.showFilters = v; emit(); } },
   setSelected(p: Pill) { if (state.selected !== p) { state.selected = p; emit(); } },
   setCompact(v: boolean) { if (state.compact !== v) { state.compact = v; emit(); } },
+  setCustomFilters(v?: React.ReactNode) { if (state.customFilters !== v) { state.customFilters = v; emit(); } },
   setScrollY(y?: Animated.Value) { 
     // Don't emit on scrollY change since Animated.Value changes don't need React updates
     state.scrollY = y; 

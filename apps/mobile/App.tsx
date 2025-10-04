@@ -16,6 +16,7 @@ import Search from './src/screens/Search';
 import NewHot from './src/screens/NewHot';
 import { MobileApi } from './src/api/client';
 import My from './src/screens/My';
+import * as Haptics from 'expo-haptics';
 
 type RootStackParamList = {
   Onboarding: undefined;
@@ -83,6 +84,11 @@ export default function App() {
           return <Ionicons name={name as any} size={22} color={color} />;
         }
       })}
+      screenListeners={{
+        tabPress: () => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+      }}
     >
       <Tab.Screen name="HomeTab" options={{ title: 'Home' }} component={HomeStackNavigator} />
       <Tab.Screen name="NewHotTab" options={{ title: 'New & Hot' }}>
