@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { MobileApi } from '../api/client';
+import { TopBarStore, useTopBarStore } from '../components/TopBarStore';
 
 type TabType = 'coming-soon' | 'everyones-watching' | 'top10-shows' | 'top10-movies';
 
@@ -27,6 +28,31 @@ export default function NewHot() {
   const [activeTab, setActiveTab] = useState<TabType>('coming-soon');
   const [loading, setLoading] = useState(false);
   const [content, setContent] = useState<ContentItem[]>([]);
+  const y = useRef(new Animated.Value(0)).current;
+  const barHeight = useTopBarStore(s => s.height || 60);
+  const isFocused = useIsFocused();
+
+  // Set scrollY and configure TopBar when screen is focused
+  React.useLayoutEffect(() => {
+    if (isFocused) {
+      TopBarStore.setScrollY(y);
+    }
+  }, [isFocused, y]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    
+    TopBarStore.setVisible(true);
+    TopBarStore.setShowFilters(false); // No pills on NewHot
+    TopBarStore.setUsername('New & Hot');
+    TopBarStore.setSelected('all');
+    TopBarStore.setCompact(true); // Use compact mode for NewHot
+    TopBarStore.setHandlers({ 
+      onNavigateLibrary: undefined,
+      onClose: undefined,
+      onSearch: () => nav.navigate('Search')
+    });
+  }, [isFocused, nav]);
 
   useEffect(() => {
     (async () => {
@@ -159,19 +185,11 @@ export default function NewHot() {
         style={StyleSheet.absoluteFillObject}
       />
 
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>New & Hot</Text>
-          <View style={{ flexDirection: 'row', gap: 20 }}>
-            <Pressable onPress={() => nav.navigate('Search')}>
-              <Ionicons name="search" size={24} color="#fff" />
-            </Pressable>
-          </View>
-        </View>
+      <View style={{ flex: 1, paddingTop: barHeight }}>
+        {/* TopAppBar is rendered globally above this content */}
 
         {/* Tabs */}
-        <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}>
+        <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -189,7 +207,14 @@ export default function NewHot() {
         </View>
 
         {/* Content */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 80 }}>
+        <Animated.ScrollView 
+          style={{ flex: 1 }} 
+          contentContainerStyle={{ paddingBottom: 80 }}
+          scrollEventThrottle={16}
+          onScroll={Animated.event([
+            { nativeEvent: { contentOffset: { y } } }
+          ], { useNativeDriver: false })}
+        >
           {loading ? (
             <View style={{ alignItems: 'center', paddingTop: 40 }}>
               <ActivityIndicator color="#fff" size="large" />
@@ -251,25 +276,13 @@ export default function NewHot() {
               ))}
             </View>
           )}
-        </ScrollView>
-      </SafeAreaView>
+        </Animated.ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: '700',
-  },
   tabPill: {
     paddingHorizontal: 14,
     paddingVertical: 6,

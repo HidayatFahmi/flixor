@@ -8,7 +8,7 @@ import { Pressable } from 'react-native';
 import Pills from './Pills';
 import { LinearGradient } from 'expo-linear-gradient';
 
-export default function TopAppBar({ visible, username, showFilters, selected, onChange, onOpenCategories, onNavigateLibrary, onClose, onSearch, scrollY, onHeightChange, showPills }: {
+export default function TopAppBar({ visible, username, showFilters, selected, onChange, onOpenCategories, onNavigateLibrary, onClose, onSearch, scrollY, onHeightChange, showPills, compact }: {
   visible: boolean;
   username?: string;
   showFilters?: boolean;
@@ -21,22 +21,26 @@ export default function TopAppBar({ visible, username, showFilters, selected, on
   scrollY?: Animated.Value;
   onHeightChange?: (h:number)=>void;
   showPills?: Animated.Value; // 0=hidden, 1=visible
+  compact?: boolean; // Smaller header for screens like NewHot
 }) {
   const insets = useSafeAreaInsets();
   const AnimatedBlurView: any = Animated.createAnimatedComponent(BlurView);
 
-  // Compute heights
-  const baseHeight = 44;
+  // Compute heights - use smaller base height in compact mode
+  const baseHeight = compact ? 36 : 44;
   const pillsHeight = 48;
-  const collapsedHeight = insets.top + baseHeight + 8;
-  const expandedHeight = insets.top + baseHeight + pillsHeight + 8;
+  // In compact mode (NewHot), always use collapsed height; in normal mode respect showFilters
+  const collapsedHeight = insets.top + baseHeight + 4;
+  const expandedHeight = compact 
+    ? collapsedHeight // Compact mode: no pills space ever
+    : (insets.top + baseHeight + (showFilters ? pillsHeight + 8 : 4));
 
   // Animated height - interpolate from showPills (uses spring animation from screens)
   const heightAnim = useRef(new Animated.Value(expandedHeight)).current;
   
-  // When showPills changes, animate height smoothly
+  // When showPills changes, animate height smoothly (only in non-compact mode)
   useEffect(() => {
-    if (showPills) {
+    if (showPills && !compact) {
       // Listen to showPills changes and animate height accordingly
       const listener = showPills.addListener(({ value }) => {
         const targetHeight = collapsedHeight + (value * (pillsHeight + 8));
@@ -47,15 +51,22 @@ export default function TopAppBar({ visible, username, showFilters, selected, on
         }).start();
       });
       return () => showPills.removeListener(listener);
+    } else if (compact) {
+      // In compact mode, set height to collapsed immediately
+      Animated.timing(heightAnim, {
+        toValue: collapsedHeight,
+        duration: 0,
+        useNativeDriver: false,
+      }).start();
     }
-  }, [showPills]);
+  }, [showPills, compact, collapsedHeight, pillsHeight]);
 
-  // Report height (always report expanded so content doesn't jump)
+  // Report height based on mode
   useEffect(() => {
     if (onHeightChange && visible) {
-      onHeightChange(expandedHeight);
+      onHeightChange(compact ? collapsedHeight : expandedHeight);
     }
-  }, [expandedHeight, visible, onHeightChange]);
+  }, [expandedHeight, collapsedHeight, visible, onHeightChange, compact]);
 
   // Derive blur/tint from scrollY
   const blurIntensity = scrollY ? scrollY.interpolate({ inputRange:[0,120], outputRange:[0,90], extrapolate:'clamp' }) : new Animated.Value(0);
@@ -89,12 +100,14 @@ export default function TopAppBar({ visible, username, showFilters, selected, on
         <View style={{ paddingHorizontal: 16, paddingTop: 0 }}>
           {/* Header row – always visible */}
           <View style={{ height: baseHeight, flexDirection: 'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal: 4 }}>
-            <Text style={{ color: '#fff', fontSize: 25, fontWeight: '600'}}>For {username || 'You'}</Text>
+            <Text style={{ color: '#fff', fontSize: compact ? 20 : 25, fontWeight: compact ? '700' : '600'}}>
+              {compact ? username : `For ${username || 'You'}`}
+            </Text>
             <View style={{ flexDirection: 'row' }}>
-              <Feather name="cast" size={20} color="#fff" style={{ marginHorizontal: 8 }} />
-              <Ionicons name="download-outline" size={20} color="#fff" style={{ marginHorizontal: 8 }} />
+              {!compact && <Feather name="cast" size={20} color="#fff" style={{ marginHorizontal: 8 }} />}
+              {!compact && <Ionicons name="download-outline" size={20} color="#fff" style={{ marginHorizontal: 8 }} />}
               <Pressable onPress={onSearch}>
-                <Ionicons name="search-outline" size={20} color="#fff" style={{ marginHorizontal: 8 }} />
+                <Ionicons name="search-outline" size={compact ? 22 : 20} color="#fff" style={{ marginHorizontal: compact ? 0 : 8 }} />
               </Pressable>
             </View>
           </View>

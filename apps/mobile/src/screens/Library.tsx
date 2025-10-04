@@ -60,6 +60,7 @@ export default function Library() {
     TopBarStore.setShowFilters(true);
     TopBarStore.setUsername(username);
     TopBarStore.setSelected(selected);
+    TopBarStore.setCompact(false); // Library uses full-size bar
     TopBarStore.setHandlers({ 
       onNavigateLibrary: undefined, 
       onClose: () => {

@@ -13,6 +13,7 @@ type State = {
   onNavigateLibrary?: (tab: 'movies'|'shows')=>void;
   onClose?: ()=>void;
   onSearch?: ()=>void;
+  compact?: boolean;
   height: number;
 };
 
@@ -28,6 +29,7 @@ const state: State = {
   onNavigateLibrary: undefined,
   onClose: undefined,
   onSearch: undefined,
+  compact: false,
   height: 90,
 };
 
@@ -42,6 +44,7 @@ export const TopBarStore = {
   setUsername(u?: string) { if (state.username !== u) { state.username = u; emit(); } },
   setShowFilters(v: boolean) { if (state.showFilters !== v) { state.showFilters = v; emit(); } },
   setSelected(p: Pill) { if (state.selected !== p) { state.selected = p; emit(); } },
+  setCompact(v: boolean) { if (state.compact !== v) { state.compact = v; emit(); } },
   setScrollY(y?: Animated.Value) { 
     // Don't emit on scrollY change since Animated.Value changes don't need React updates
     state.scrollY = y; 

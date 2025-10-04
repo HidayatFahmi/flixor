@@ -85,7 +85,14 @@ export default function App() {
       })}
     >
       <Tab.Screen name="HomeTab" options={{ title: 'Home' }} component={HomeStackNavigator} />
-      <Tab.Screen name="NewHotTab" options={{ title: 'New & Hot' }} component={NewHot} />
+      <Tab.Screen name="NewHotTab" options={{ title: 'New & Hot' }}>
+        {() => (
+          <View style={{ flex:1 }}>
+            <NewHot />
+            <GlobalTopAppBar />
+          </View>
+        )}
+      </Tab.Screen>
       <Tab.Screen name="MyTab" options={{ title: 'My Netflix' }}>{() => api ? <My api={api} /> : <View style={{ flex:1, backgroundColor:'#000' }} />}</Tab.Screen>
     </Tab.Navigator>
   );

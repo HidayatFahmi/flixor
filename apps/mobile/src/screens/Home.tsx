@@ -84,6 +84,7 @@ export default function Home({ api }: { api: MobileApi }) {
     TopBarStore.setShowFilters(true);
     TopBarStore.setUsername(welcome.replace('Welcome, ', ''));
     TopBarStore.setSelected(tab);
+    TopBarStore.setCompact(false); // Home uses full-size bar
     TopBarStore.setHandlers({ 
       onNavigateLibrary: (t)=> {
         console.log('[Home] Navigating to Library with tab:', t);
