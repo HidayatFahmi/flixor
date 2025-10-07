@@ -3,7 +3,7 @@
     "name": "Flixor",
     "slug": "flixor-mobile",
     "scheme": "flixor",
-    "version": "1.0.0",
+    "version": "0.1.8",
     "orientation": "default",
     "updates": {
       "fallbackToCacheTimeout": 0
@@ -12,8 +12,34 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "xyz.flixor.mobile",
+      "icon": "./assets/icons/ios-light.png"
     },
-    "android": {}
+    "android": {
+      "package": "xyz.flixor.mobile",
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icons/adaptive-icon.png",
+        "monochromeImage": "./assets/icons/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "14e1896c-9a1f-4f6b-a9c1-f5b8c5a9d2b4"
+      }
+    },
+    "owner": "deviprasad97",
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ]
   }
 }

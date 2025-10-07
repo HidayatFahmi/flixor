@@ -172,7 +172,7 @@ export default function My({ api }: { api: MobileApi }) {
 
   async function selectServer(server: any) {
     try {
-      await api.post('/api/plex/set-current-server', { serverId: server.id });
+      await api.post('/api/plex/servers/current', { serverId: server.id });
       setSelectedServer(server);
       Alert.alert('Success', `Connected to ${server.name}`);
       await loadServers();
@@ -183,22 +183,23 @@ export default function My({ api }: { api: MobileApi }) {
 
   async function loadEndpoints(serverId: string) {
     try {
-      const res = await api.get(`/api/plex/server/${serverId}/connections`);
+      const res = await api.get(`/api/plex/servers/${serverId}/connections`);
       setEndpoints(res?.connections || []);
       setShowServerEndpoints(serverId);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to load endpoints');
+    } catch (e: any) {
+      console.error('[My] Failed to load endpoints:', e);
+      Alert.alert('Error', e?.message || 'Failed to load endpoints');
     }
   }
 
   async function selectEndpoint(serverId: string, uri: string) {
     try {
-      await api.post('/api/plex/server/endpoint', { serverId, uri, setPreferred: true });
+      await api.post(`/api/plex/servers/${serverId}/endpoint`, { uri, test: true });
       Alert.alert('Success', 'Endpoint updated');
       setShowServerEndpoints(null);
       await loadServers();
-    } catch (e) {
-      Alert.alert('Error', 'Endpoint unreachable');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Endpoint unreachable');
     }
   }
 
@@ -279,7 +280,7 @@ export default function My({ api }: { api: MobileApi }) {
         {/* App Settings Section */}
         <Card title="App Settings">
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Plex URL</Text>
+            <Text style={styles.inputLabel}>Backend URL</Text>
             <TextInput
               value={plexUrl}
               onChangeText={setPlexUrl}
@@ -305,7 +306,7 @@ export default function My({ api }: { api: MobileApi }) {
             <TextInput
               value={tmdbKey}
               onChangeText={setTmdbKey}
-              placeholder="Your TMDB API key"
+              placeholder="Using default key"
               placeholderTextColor="#666"
               style={styles.input}
             />

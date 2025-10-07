@@ -70,12 +70,10 @@ const logger = winston.createLogger({
   ],
 });
 
-// Add console transport for development
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: consoleFormat,
-  }));
-}
+// Add console transport (always enabled for visibility)
+logger.add(new winston.transports.Console({
+  format: consoleFormat,
+}));
 
 // Create child loggers for different components
 export const createLogger = (component: string) => {

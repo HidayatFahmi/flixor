@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import BadgePill from '../components/BadgePill';
 import { useNavigation } from '@react-navigation/native';
+import { TopBarStore } from '../components/TopBarStore';
 
 let ExpoImage: any = null;
 try { ExpoImage = require('expo-image').Image; } catch {}
@@ -88,11 +89,21 @@ export default function Details({ route }: RouteParams) {
 
   useEffect(() => {
     Animated.timing(appear, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+    // Hide TopBar and TabBar when Details screen is shown
+    TopBarStore.setVisible(false);
+    TopBarStore.setTabBarVisible(false);
+    return () => {
+      // Restore TopBar and TabBar when Details screen is closed
+      TopBarStore.setVisible(true);
+      TopBarStore.setTabBarVisible(true);
+    };
   }, []);
 
   useEffect(() => {
     (async () => {
+      console.log('[Details] useEffect starting, loading API...');
       const a = await MobileApi.load();
+      console.log('[Details] API loaded:', !!a, 'has token:', !!a?.token);
       setApi(a);
       if (a && params.type === 'plex' && params.ratingKey) {
         try {
@@ -256,6 +267,8 @@ export default function Details({ route }: RouteParams) {
     })();
   }, []);
 
+  console.log('[Details] Render - loading:', loading, 'api:', !!api, 'meta:', !!meta);
+
   if (loading || !api) {
     return (
       <View style={{ flex:1, backgroundColor:'#0b0b0b', alignItems:'center', justifyContent:'center' }}>
@@ -263,6 +276,16 @@ export default function Details({ route }: RouteParams) {
       </View>
     );
   }
+
+  if (!meta) {
+    return (
+      <View style={{ flex:1, backgroundColor:'#0b0b0b', alignItems:'center', justifyContent:'center' }}>
+        <Text style={{ color:'#fff' }}>No metadata available</Text>
+      </View>
+    );
+  }
+
+  console.log('[Details] Rendering full UI for:', meta?.title);
 
   const authHeaders = api.token ? { Authorization: `Bearer ${api.token}` } : undefined;
   const backdrop = () => {

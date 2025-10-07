@@ -95,7 +95,13 @@ router.get('/ratings/:ratingKey',
 
       res.json({ imdb, rottenTomatoes: (rtCritic != null || rtAudience != null) ? { critic: rtCritic, audience: rtAudience } : null });
     } catch (error: any) {
-      logger.error('Failed to get ratings', error);
+      logger.error(`Failed to get ratings for ratingKey ${req.params.ratingKey}:`, {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data,
+        status: error.response?.status,
+        userId: req.user?.id
+      });
       next(new AppError('Failed to get ratings', 500));
     }
   }
@@ -382,7 +388,13 @@ router.get('/metadata/:id',
         res.json(metadata);
       }
     } catch (error: any) {
-      logger.error('Failed to get metadata', error);
+      logger.error(`Failed to get metadata for ratingKey ${req.params.id}:`, {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data,
+        status: error.response?.status,
+        userId: req.user?.id
+      });
       next(new AppError(error.message || 'Failed to get metadata', 500));
     }
   }

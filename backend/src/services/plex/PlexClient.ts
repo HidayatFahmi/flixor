@@ -140,10 +140,19 @@ export class PlexClient {
   }
 
   private async requestWithFallback<T>(path: string): Promise<T> {
+    const primaryUrl = `${this.axiosClient.defaults.baseURL}${path}`;
     try {
+      logger.info(`[Plex] Requesting: ${primaryUrl}`);
       const res = await this.axiosClient.get<T>(path);
       return res.data as any as T;
     } catch (err: any) {
+      logger.error(`[Plex] Primary request FAILED: ${primaryUrl}`, {
+        message: err.message,
+        code: err.code,
+        status: err.response?.status,
+        isTimeout: err.code === 'ECONNABORTED'
+      });
+
       const candidates: string[] = [];
       const port = this.server.port || 32400;
       const protos: Array<'https'|'http'> = this.server.protocol === 'https' ? ['https','http'] : ['http','https'];
@@ -155,21 +164,29 @@ export class PlexClient {
       // Locals
       (this.server.localAddresses || []).forEach(addr => protos.forEach(p => push(p, addr)));
 
+      logger.info(`[Plex] Trying ${candidates.length} fallback URLs for: ${path}`, { candidates });
+
       for (const base of candidates) {
         try {
+          const fallbackUrl = `${base}${path}`;
+          logger.info(`[Plex] Trying fallback: ${fallbackUrl}`);
           const alt = axios.create({
             baseURL: base,
             timeout: 10000,
             headers: this.axiosClient.defaults.headers.common,
           });
           const res = await alt.get<T>(path);
+          logger.info(`[Plex] ✓ Fallback SUCCEEDED: ${fallbackUrl}`);
           // Switch to the working base for future calls
           this.axiosClient.defaults.baseURL = base;
           return res.data as any as T;
-        } catch (e) {
+        } catch (e: any) {
+          logger.info(`[Plex] ✗ Fallback failed (${base}): ${e.message}`);
           continue;
         }
       }
+
+      logger.error(`[Plex] All ${candidates.length} fallback attempts failed for: ${path}`);
       throw err;
     }
   }

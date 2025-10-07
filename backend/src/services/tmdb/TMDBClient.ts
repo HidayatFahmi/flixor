@@ -100,6 +100,14 @@ export class TMDBClient {
       const status = error.response.status;
       const message = (error.response.data as any)?.status_message || 'Unknown error';
 
+      // 404s are expected (invalid TMDB IDs, deleted movies, etc.) - log as warning not error
+      if (status === 404) {
+        logger.warn(`TMDB resource not found: ${error.config?.url}`, {
+          userId: this.userId
+        });
+        throw new Error('Resource not found');
+      }
+
       logger.error(`TMDB API error: ${status} - ${message}`, {
         url: error.config?.url,
         userId: this.userId
@@ -112,8 +120,6 @@ export class TMDBClient {
         const retryAfter = error.response.headers['retry-after'] || '5';
         logger.warn(`Rate limited by TMDB. Retry after ${retryAfter}s`);
         throw new Error(`Rate limited. Please try again in ${retryAfter} seconds`);
-      } else if (status === 404) {
-        throw new Error('Resource not found');
       }
     }
 

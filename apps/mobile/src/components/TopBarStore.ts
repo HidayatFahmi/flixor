@@ -5,6 +5,7 @@ type Pill = 'all'|'movies'|'shows';
 
 type State = {
   visible: boolean;
+  tabBarVisible: boolean;
   username?: string;
   showFilters: boolean;
   selected: Pill;
@@ -22,6 +23,7 @@ type Listener = () => void;
 
 const state: State = {
   visible: true,
+  tabBarVisible: true,
   username: undefined,
   showFilters: true, // default to true so pills are visible
   selected: 'all',
@@ -43,14 +45,15 @@ export const TopBarStore = {
   subscribe(fn: Listener) { listeners.add(fn); return () => listeners.delete(fn); },
   getState(): State { return state; },
   setVisible(v: boolean) { if (state.visible !== v) { state.visible = v; emit(); } },
+  setTabBarVisible(v: boolean) { if (state.tabBarVisible !== v) { state.tabBarVisible = v; emit(); } },
   setUsername(u?: string) { if (state.username !== u) { state.username = u; emit(); } },
   setShowFilters(v: boolean) { if (state.showFilters !== v) { state.showFilters = v; emit(); } },
   setSelected(p: Pill) { if (state.selected !== p) { state.selected = p; emit(); } },
   setCompact(v: boolean) { if (state.compact !== v) { state.compact = v; emit(); } },
   setCustomFilters(v?: React.ReactNode) { if (state.customFilters !== v) { state.customFilters = v; emit(); } },
-  setScrollY(y?: Animated.Value) { 
+  setScrollY(y?: Animated.Value) {
     // Don't emit on scrollY change since Animated.Value changes don't need React updates
-    state.scrollY = y; 
+    state.scrollY = y;
   },
   setShowPills(v?: Animated.Value) {
     // Don't emit - Animated.Value changes don't need React updates

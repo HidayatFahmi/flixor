@@ -9,6 +9,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MobileApi } from '../api/client';
 import { Replay10Icon, Forward10Icon } from '../components/icons/SkipIcons';
+import { TopBarStore } from '../components/TopBarStore';
 
 type RouteParams = {
   route?: {
@@ -75,6 +76,10 @@ export default function Player({ route }: RouteParams) {
   // Legacy pan scrub state removed (using Slider now)
 
   useEffect(() => {
+    // Hide TopBar and TabBar when Player is shown
+    TopBarStore.setVisible(false);
+    TopBarStore.setTabBarVisible(false);
+
     (async () => {
       // Configure audio session
       try {
@@ -295,6 +300,10 @@ export default function Player({ route }: RouteParams) {
     })();
 
     return () => {
+      // Restore TopBar and TabBar when Player is closed
+      TopBarStore.setVisible(true);
+      TopBarStore.setTabBarVisible(true);
+
       // Cleanup
       (async () => {
         const { plexBaseUrl: baseUrl, plexToken: token, sessionId: sid } = cleanupInfoRef.current;

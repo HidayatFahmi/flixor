@@ -67,6 +67,16 @@ export class TraktClient {
     await repo.save(settings);
   }
 
+  async clearTokens() {
+    if (!this.userId) return;
+    const repo = AppDataSource.getRepository(UserSettings);
+    const settings = await repo.findOne({ where: { userId: this.userId } });
+    if (settings) {
+      (settings as any).traktTokens = null;
+      await repo.save(settings);
+    }
+  }
+
   private async authHeaders(): Promise<Record<string, string>> {
     const tokens = await this.getUserTokens();
     const headers: Record<string, string> = {

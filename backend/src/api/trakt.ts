@@ -182,4 +182,16 @@ router.post('/watchlist/remove', requireAuth, async (req: AuthenticatedRequest, 
   }
 });
 
+// Sign out (clear tokens)
+router.post('/signout', requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const c = new TraktClient(req.user!.id);
+    await c.clearTokens();
+    res.json({ ok: true, message: 'Signed out from Trakt' });
+  } catch (e: any) {
+    logger.error('Trakt signout failed', e);
+    next(new AppError('Failed to sign out', 500));
+  }
+});
+
 export default router;

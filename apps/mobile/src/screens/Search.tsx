@@ -8,6 +8,7 @@ import { MobileApi } from '../api/client';
 import Row from '../components/Row';
 import { useNavigation } from '@react-navigation/native';
 import { RowItem } from '../api/data';
+import { TopBarStore } from '../components/TopBarStore';
 
 type SearchResult = {
   id: string;
@@ -50,6 +51,9 @@ export default function Search() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // Hide TopBar when Search is opened
+    TopBarStore.setVisible(false);
+
     (async () => {
       const a = await MobileApi.load();
       setApi(a);
@@ -70,7 +74,7 @@ export default function Search() {
             a.get('/api/tmdb/trending/movie/week'),
             a.get('/api/tmdb/trending/tv/week'),
           ]);
-          
+
           const movies = (moviesRes?.results || []).slice(0, 6).map((item: any) => ({
             id: `tmdb:movie:${item.id}`,
             title: item.title,
@@ -84,24 +88,29 @@ export default function Search() {
             image: item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` : undefined,
             year: item.first_air_date?.slice(0, 4),
           }));
-          
+
           // Interleave movies and shows for variety
           const combined: RowItem[] = [];
           for (let i = 0; i < Math.max(movies.length, shows.length); i++) {
             if (shows[i]) combined.push(shows[i]);
             if (movies[i]) combined.push(movies[i]);
           }
-          
+
           setTrending(combined);
         } catch {}
       }
     })();
-    
+
     // Fade in animation
     Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-    
+
     // Auto-focus input
     setTimeout(() => inputRef.current?.focus(), 100);
+
+    // Restore TopBar when Search is unmounted (navigated back)
+    return () => {
+      TopBarStore.setVisible(true);
+    };
   }, []);
 
   const performSearch = useCallback(async (q: string) => {

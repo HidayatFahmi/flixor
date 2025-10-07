@@ -6,6 +6,7 @@ import { View, ActivityIndicator, Text } from 'react-native';
 import GlobalTopAppBar from './src/components/GlobalTopAppBar';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { useTopBarStore } from './src/components/TopBarStore';
 import Onboarding from './src/screens/Onboarding';
 import Login from './src/screens/Login';
 import Home from './src/screens/Home';
@@ -17,6 +18,8 @@ import NewHot from './src/screens/NewHot';
 import { MobileApi } from './src/api/client';
 import My from './src/screens/My';
 import * as Haptics from 'expo-haptics';
+import { Platform } from 'react-native';
+
 
 // Note: expo-image uses disk cache by default (cachePolicy="disk" or "memory-disk")
 // Cache limits are managed by the OS and expo-image internally
@@ -51,7 +54,10 @@ export default function App() {
     );
   }
 
-  const HomeStackNavigator = () => (
+  const HomeStackNavigator = () => {
+    const topBarVisible = useTopBarStore(s => s.visible);
+
+    return (
       <View style={{ flex:1 }}>
         <HomeStack.Navigator screenOptions={{ headerShown: false }}>
           <HomeStack.Screen name="HomeScreen">{() => <Home api={api!} />}</HomeStack.Screen>
@@ -60,51 +66,57 @@ export default function App() {
           <HomeStack.Screen name="Library" component={Library} options={{ presentation: 'card', animation: 'fade' }} />
           <HomeStack.Screen name="Search" component={Search} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         </HomeStack.Navigator>
-        <GlobalTopAppBar />
+        {topBarVisible && <GlobalTopAppBar />}
       </View>
-  );
+    );
+  };
 
-  const Tabs = () => (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarShowLabel: true,
-        tabBarActiveTintColor: '#fff',
-        tabBarInactiveTintColor: '#bdbdbd',
-        tabBarStyle: {
-          position: 'absolute', left: 0, right: 0, bottom: 0,
-          backgroundColor: 'transparent', borderRadius: 0,
-          borderTopWidth: 0, height: 68, paddingBottom: 10, paddingTop: 10,
-          overflow: 'hidden', zIndex: 100,
-        },
-        tabBarBackground: () => (
-          <BlurView intensity={90} tint="dark" style={{ flex: 1 }} />
-        ),
-        tabBarIcon: ({ color, size, focused }) => {
-          const name = route.name === 'HomeTab' ? (focused ? 'home' : 'home-outline')
-            : route.name === 'NewHotTab' ? (focused ? 'play-circle' : 'play-circle-outline')
-            : (focused ? 'person' : 'person-outline');
-          return <Ionicons name={name as any} size={22} color={color} />;
-        }
-      })}
-      screenListeners={{
-        tabPress: () => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-      }}
-    >
-      <Tab.Screen name="HomeTab" options={{ title: 'Home' }} component={HomeStackNavigator} />
-      <Tab.Screen name="NewHotTab" options={{ title: 'New & Hot' }}>
-        {() => (
-          <View style={{ flex:1 }}>
-            <NewHot />
-            <GlobalTopAppBar />
-          </View>
-        )}
-      </Tab.Screen>
-      <Tab.Screen name="MyTab" options={{ title: 'My Netflix' }}>{() => api ? <My api={api} /> : <View style={{ flex:1, backgroundColor:'#000' }} />}</Tab.Screen>
-    </Tab.Navigator>
-  );
+  const Tabs = () => {
+    const tabBarVisible = useTopBarStore(s => s.tabBarVisible);
+
+    return (
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarShowLabel: true,
+          tabBarActiveTintColor: '#fff',
+          tabBarInactiveTintColor: '#bdbdbd',
+          tabBarStyle: tabBarVisible ? {
+            position: 'absolute', left: 0, right: 0, bottom: 0,
+            backgroundColor:  Platform.OS === 'ios' ? 'transparent' : 'rgba(0,0,0,0.9)',
+            borderRadius: 0,
+            borderTopWidth: 0, height: 68, paddingBottom: 10, paddingTop: 10,
+            overflow: 'hidden', zIndex: 100,
+          } : { display: 'none' },
+          tabBarBackground: () => (
+            Platform.OS === 'ios' ? <BlurView intensity={90} tint="dark" style={{ flex: 1 }} /> : <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)' }} />
+          ),
+          tabBarIcon: ({ color, size, focused }) => {
+            const name = route.name === 'HomeTab' ? (focused ? 'home' : 'home-outline')
+              : route.name === 'NewHotTab' ? (focused ? 'play-circle' : 'play-circle-outline')
+              : (focused ? 'person' : 'person-outline');
+            return <Ionicons name={name as any} size={22} color={color} />;
+          }
+        })}
+        screenListeners={{
+          tabPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+        }}
+      >
+        <Tab.Screen name="HomeTab" options={{ title: 'Home' }} component={HomeStackNavigator} />
+        <Tab.Screen name="NewHotTab" options={{ title: 'New & Hot' }}>
+          {() => (
+            <View style={{ flex:1 }}>
+              <NewHot />
+              <GlobalTopAppBar />
+            </View>
+          )}
+        </Tab.Screen>
+        <Tab.Screen name="MyTab" options={{ title: 'My Netflix' }}>{() => api ? <My api={api} /> : <View style={{ flex:1, backgroundColor:'#000' }} />}</Tab.Screen>
+      </Tab.Navigator>
+    );
+  };
 
   return (
     <NavigationContainer>
