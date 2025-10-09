@@ -35,10 +35,54 @@ struct SettingsView: View {
 }
 
 struct GeneralSettingsView: View {
+    @AppStorage("playerBackend") private var selectedBackend: String = PlayerBackend.avplayer.rawValue
+
+    private var playerBackendBinding: Binding<PlayerBackend> {
+        Binding(
+            get: { PlayerBackend(rawValue: selectedBackend) ?? .avplayer },
+            set: { selectedBackend = $0.rawValue }
+        )
+    }
+
     var body: some View {
         Form {
-            Text("General settings will go here")
-                .foregroundStyle(.secondary)
+            Section("Playback") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Player Backend")
+                        .font(.headline)
+
+                    Picker("", selection: playerBackendBinding) {
+                        ForEach(PlayerBackend.allCases) { backend in
+                            Text(backend.displayName).tag(backend)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(PlayerBackend.allCases) { backend in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("•")
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(backend.displayName)
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                    Text(backend.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.leading, 20)
+
+                    Text("Choose the media player backend. Changes will apply to new playback sessions.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+            }
         }
         .formStyle(.grouped)
         .padding()

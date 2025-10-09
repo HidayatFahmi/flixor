@@ -40,6 +40,7 @@ struct RootView: View {
 
 struct MainView: View {
     @State private var selectedTab: NavItem = .home
+    @State private var showingSettings = false
     @EnvironmentObject var sessionManager: SessionManager
     @StateObject private var router = NavigationRouter()
 
@@ -98,7 +99,7 @@ struct MainView: View {
                     }
 
                     Button(action: {
-                        // TODO: Navigate to settings
+                        showingSettings = true
                     }) {
                         Label("Settings", systemImage: "gear")
                     }
@@ -125,6 +126,9 @@ struct MainView: View {
         }
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+        }
     }
 
     @ViewBuilder

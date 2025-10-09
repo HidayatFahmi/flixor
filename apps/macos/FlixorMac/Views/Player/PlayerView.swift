@@ -15,6 +15,11 @@ struct PlayerView: View {
     @State private var showControls = true
     @State private var hideControlsTask: Task<Void, Never>?
     @State private var isFullScreen = false
+    @AppStorage("playerBackend") private var selectedBackend: String = PlayerBackend.avplayer.rawValue
+
+    private var playerBackend: PlayerBackend {
+        PlayerBackend(rawValue: selectedBackend) ?? .avplayer
+    }
 
     init(item: MediaItem) {
         self.item = item
@@ -25,13 +30,26 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // Video Player
-            if let player = viewModel.player {
-                VideoPlayerView(player: player)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        toggleControls()
+            // Video Player - Switch based on backend
+            Group {
+                switch playerBackend {
+                case .avplayer:
+                    if let player = viewModel.player {
+                        VideoPlayerView(player: player)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                toggleControls()
+                            }
                     }
+                case .mpv:
+                    if let mpvController = viewModel.mpvController {
+                        MPVVideoView(mpvController: mpvController)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                toggleControls()
+                            }
+                    }
+                }
             }
 
             // Loading Indicator
@@ -71,6 +89,8 @@ struct PlayerView: View {
                     viewModel: viewModel,
                     isFullScreen: $isFullScreen,
                     onClose: {
+                        // Stop playback BEFORE dismissing
+                        viewModel.stopPlayback()
                         dismiss()
                     },
                     onToggleFullScreen: toggleFullScreen

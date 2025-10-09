@@ -16,3 +16,4 @@ backend/cache/images/plex/
 *.md
 .build
 build
+*.dylib

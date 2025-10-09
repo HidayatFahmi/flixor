@@ -31,10 +31,16 @@ class PlayerViewModel: ObservableObject {
     // Playback metadata
     let item: MediaItem
     private(set) var player: AVPlayer?
+    @Published var mpvController: MPVPlayerController?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     private var kvoCancellables = Set<AnyCancellable>()
     private let api = APIClient.shared
+
+    // Backend selection
+    private var playerBackend: PlayerBackend {
+        UserDefaults.standard.playerBackend
+    }
 
     // Progress tracking
     private var progressTimer: Timer?
@@ -72,8 +78,82 @@ class PlayerViewModel: ObservableObject {
     private func setupPlayer() {
         Task {
             await fetchServerResumeOffset()
-            await loadStreamURL()
+
+            // Initialize backend based on user preference
+            switch playerBackend {
+            case .avplayer:
+                print("🎬 [Player] Using AVPlayer backend")
+                await loadStreamURL()
+            case .mpv:
+                print("🎬 [Player] Using MPV backend")
+                setupMPVController()
+                await loadStreamURL()
+            }
         }
+    }
+
+    private func setupMPVController() {
+        let controller = MPVPlayerController()
+
+        // Setup property change callback
+        controller.onPropertyChange = { [weak self] property, value in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                switch property {
+                case "time-pos":
+                    if let time = value as? Double {
+                        self.currentTime = time
+                    }
+                case "duration":
+                    if let dur = value as? Double {
+                        self.duration = dur
+                    }
+                case "pause":
+                    if let paused = value as? Bool {
+                        self.isPlaying = !paused
+                    }
+                case "volume":
+                    if let vol = value as? Double {
+                        self.volume = Float(vol / 100.0)
+                    }
+                case "mute":
+                    if let muted = value as? Bool {
+                        self.isMuted = muted
+                    }
+                default:
+                    break
+                }
+            }
+        }
+
+        // Setup event callback
+        controller.onEvent = { [weak self] event in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                print("🎯 [Player] MPV event: \(event)")
+                switch event {
+                case "file-started":
+                    print("📺 [Player] MPV file started")
+                case "file-loaded":
+                    print("✅ [Player] MPV file loaded")
+                    self.isLoading = false
+                    self.applyInitialSeekIfNeeded()
+                case "playback-restart":
+                    print("▶️ [Player] MPV playback started")
+                    self.isPlaying = true
+                    self.isLoading = false
+                case "file-ended":
+                    print("✅ [Player] MPV playback finished")
+                    self.handlePlaybackEnd()
+                default:
+                    print("ℹ️ [Player] MPV event (unhandled): \(event)")
+                    break
+                }
+            }
+        }
+
+        self.mpvController = controller
+        print("✅ [Player] MPV controller initialized")
     }
 
     private func fetchServerResumeOffset() async {
@@ -156,30 +236,42 @@ class PlayerViewModel: ObservableObject {
             do {
                 let meta: MetaResponse = try await api.get("/api/plex/metadata/\(ratingKey)")
                 let m = meta.Media?.first
-                // Gate direct play: avoid MKV, HEVC/Dolby Vision/TrueHD containers/codecs known to fail in AVFoundation
                 let container = (m?.container ?? "").lowercased()
                 let vcodec = (m?.videoCodec ?? "").lowercased()
                 let acodec = (m?.audioCodec ?? "").lowercased()
-                let unsafeContainer = container.contains("mkv") || container.contains("mka")
-                let unsafeVideo = vcodec.contains("hevc") || vcodec.contains("dvh") || vcodec.contains("dvhe")
-                let unsafeAudio = acodec.contains("truehd") || acodec.contains("eac3") // macOS often lacks passthrough
-                let allowDirect = !(unsafeContainer || unsafeVideo || unsafeAudio)
+
+                // MPV can handle MKV/HEVC/TrueHD directly, AVPlayer cannot
+                let allowDirect: Bool
+                if playerBackend == .mpv {
+                    // MPV: Allow all formats, it's very capable
+                    allowDirect = true
+                    print("✅ [Player] MPV backend: Allowing direct play for all codecs")
+                } else {
+                    // AVPlayer: Gate direct play for incompatible formats
+                    let unsafeContainer = container.contains("mkv") || container.contains("mka")
+                    let unsafeVideo = vcodec.contains("hevc") || vcodec.contains("dvh") || vcodec.contains("dvhe")
+                    let unsafeAudio = acodec.contains("truehd") || acodec.contains("eac3")
+                    allowDirect = !(unsafeContainer || unsafeVideo || unsafeAudio)
+                    if !allowDirect {
+                        print("🚫 [Player] AVPlayer: Skipping Direct Play due to incompatible container/codec: cont=\(container), v=\(vcodec), a=\(acodec)")
+                    }
+                }
 
                 if allowDirect, let key = m?.Part?.first?.key, !key.isEmpty {
                     let direct = "\(baseUrl)\(key)?X-Plex-Token=\(token)"
                     directURL = URL(string: direct)
                     if directURL != nil { print("🎯 [Player] Attempting Direct Play: \(direct)") }
-                } else {
-                    if !allowDirect { print("🚫 [Player] Skipping Direct Play due to incompatible container/codec: cont=\(container), v=\(vcodec), a=\(acodec)") }
                 }
             } catch {
                 print("⚠️ [Player] Could not fetch metadata for direct play: \(error)")
             }
 
             var startURL: URL
+            var isDirectPlay = false
             if let d = directURL {
                 self.streamURL = d
                 startURL = d
+                isDirectPlay = true
             } else {
                 // Fallback: backend HLS endpoint
                 print("📺 [Player] Requesting stream URL from backend (HLS)")
@@ -207,7 +299,8 @@ class PlayerViewModel: ObservableObject {
 
             // The start.m3u8 URL needs to be called to initiate the session
             // Then we use the session-based URL for actual playback
-            if startURL.absoluteString.contains("start.m3u8") {
+            // Skip session handling for direct play
+            if !isDirectPlay && startURL.absoluteString.contains("start.m3u8") {
                 print("📺 [Player] Starting transcode session")
 
                 // Extract session ID from URL
@@ -222,7 +315,11 @@ class PlayerViewModel: ObservableObject {
                 }
 
                 // Wait for session to initialize
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                // MPV needs more time for transcoder to generate segments
+                let delaySeconds = playerBackend == .mpv ? 5 : 1
+                print("⏳ [Player] Waiting \(delaySeconds)s for transcoder to generate segments...")
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds) * 1_000_000_000)
+                print("✅ [Player] Proceeding with playback...")
 
                 // Build session URL
                 guard let sessionId = self.sessionId,
@@ -243,51 +340,70 @@ class PlayerViewModel: ObservableObject {
                 print("✅ [Player] Stream URL ready: \(startURL.absoluteString)")
             }
 
-            // Initialize AVPlayer
+            // Initialize player based on backend
             guard let finalURL = self.streamURL else {
                 throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Stream URL not set"])
             }
-            // Configure asset with better buffering
-            let asset = AVURLAsset(url: finalURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
-            let playerItem = AVPlayerItem(asset: asset)
-            // Buffering preferences
-            if currentURLIsHLS || startURL.absoluteString.contains("m3u8") {
-                playerItem.preferredForwardBufferDuration = 45 // HLS: buffer more
-            } else {
-                playerItem.preferredForwardBufferDuration = 10 // Direct play: lighter buffer
-            }
-            playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-            playerItem.preferredPeakBitRate = 0
 
-            // Add error observer
-            playerItem.publisher(for: \.error)
-                .sink { [weak self] error in
-                    if let error = error {
-                        print("❌ [Player] AVPlayerItem error: \(error.localizedDescription)")
-                        Task { @MainActor [weak self] in
-                            self?.error = "Playback error: \(error.localizedDescription)"
-                            self?.isLoading = false
+            switch playerBackend {
+            case .avplayer:
+                // Configure asset with better buffering
+                let asset = AVURLAsset(url: finalURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
+                let playerItem = AVPlayerItem(asset: asset)
+                // Buffering preferences
+                if currentURLIsHLS || startURL.absoluteString.contains("m3u8") {
+                    playerItem.preferredForwardBufferDuration = 45 // HLS: buffer more
+                } else {
+                    playerItem.preferredForwardBufferDuration = 10 // Direct play: lighter buffer
+                }
+                playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+                playerItem.preferredPeakBitRate = 0
+
+                // Add error observer
+                playerItem.publisher(for: \.error)
+                    .sink { [weak self] error in
+                        if let error = error {
+                            print("❌ [Player] AVPlayerItem error: \(error.localizedDescription)")
+                            Task { @MainActor [weak self] in
+                                self?.error = "Playback error: \(error.localizedDescription)"
+                                self?.isLoading = false
+                            }
                         }
                     }
+                    .store(in: &cancellables)
+
+                self.player = AVPlayer(playerItem: playerItem)
+                self.player?.automaticallyWaitsToMinimizeStalling = true
+                self.player?.actionAtItemEnd = .pause
+                self.player?.allowsExternalPlayback = false
+
+                // Setup observers
+                setupTimeObserver()
+                setupPlayerObservers(playerItem: playerItem)
+                setupPlayerStateObservers()
+
+                // Auto-play immediately
+                self.player?.play()
+                self.isPlaying = true
+
+                // Start progress tracking
+                startProgressTracking()
+
+            case .mpv:
+                // Load file in MPV
+                guard let mpvController = self.mpvController else {
+                    throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "MPV controller not initialized"])
                 }
-                .store(in: &cancellables)
 
-            self.player = AVPlayer(playerItem: playerItem)
-            self.player?.automaticallyWaitsToMinimizeStalling = true
-            self.player?.actionAtItemEnd = .pause
-            self.player?.allowsExternalPlayback = false
+                print("🎬 [MPV] Loading file: \(finalURL.absoluteString)")
+                mpvController.loadFile(finalURL.absoluteString)
 
-            // Setup observers
-            setupTimeObserver()
-            setupPlayerObservers(playerItem: playerItem)
-            setupPlayerStateObservers()
+                // MPV will handle playback automatically
+                // Property and event callbacks will update our @Published properties
 
-            // Auto-play immediately
-            self.player?.play()
-            self.isPlaying = true
-
-            // Start progress tracking
-            startProgressTracking()
+                // Start progress tracking
+                startProgressTracking()
+            }
 
         } catch {
             print("❌ [Player] Failed to load stream: \(error)")
@@ -479,28 +595,51 @@ class PlayerViewModel: ObservableObject {
     // MARK: - Playback Controls
 
     func togglePlayPause() {
-        guard let player = player else { return }
-
-        if isPlaying {
-            player.pause()
-            isPlaying = false
-            stopProgressTracking()
-        } else {
-            player.play()
-            isPlaying = true
-            startProgressTracking()
+        switch playerBackend {
+        case .avplayer:
+            guard let player = player else { return }
+            if isPlaying {
+                player.pause()
+                isPlaying = false
+                stopProgressTracking()
+            } else {
+                player.play()
+                isPlaying = true
+                startProgressTracking()
+            }
+        case .mpv:
+            guard let mpv = mpvController else { return }
+            if isPlaying {
+                mpv.pause()
+                isPlaying = false
+                stopProgressTracking()
+            } else {
+                mpv.play()
+                isPlaying = true
+                startProgressTracking()
+            }
         }
     }
 
     func seek(to time: TimeInterval) {
-        guard let player = player else { return }
-        let cmTime = CMTime(seconds: time, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-        player.seek(to: cmTime) { [weak self] finished in
-            if finished {
-                print("✅ [Player] Seeked to \(time)s")
-                Task { @MainActor [weak self] in
-                    await self?.reportProgress()
+        switch playerBackend {
+        case .avplayer:
+            guard let player = player else { return }
+            let cmTime = CMTime(seconds: time, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+            player.seek(to: cmTime) { [weak self] finished in
+                if finished {
+                    print("✅ [Player] Seeked to \(time)s")
+                    Task { @MainActor [weak self] in
+                        await self?.reportProgress()
+                    }
                 }
+            }
+        case .mpv:
+            guard let mpv = mpvController else { return }
+            mpv.seek(to: time)
+            print("✅ [MPV] Seeked to \(time)s")
+            Task { @MainActor [weak self] in
+                await self?.reportProgress()
             }
         }
     }
@@ -512,12 +651,22 @@ class PlayerViewModel: ObservableObject {
 
     func setVolume(_ volume: Float) {
         self.volume = volume
-        player?.volume = isMuted ? 0 : volume
+        switch playerBackend {
+        case .avplayer:
+            player?.volume = isMuted ? 0 : volume
+        case .mpv:
+            mpvController?.setVolume(Double(volume * 100)) // MPV uses 0-100 scale
+        }
     }
 
     func toggleMute() {
         isMuted.toggle()
-        player?.volume = isMuted ? 0 : volume
+        switch playerBackend {
+        case .avplayer:
+            player?.volume = isMuted ? 0 : volume
+        case .mpv:
+            mpvController?.setMute(isMuted)
+        }
     }
 
     func changeQuality(_ quality: String) {
@@ -621,6 +770,24 @@ class PlayerViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Stop Playback
+
+    func stopPlayback() {
+        print("🛑 [Player] Stopping playback")
+
+        // Stop progress tracking immediately
+        stopProgressTracking()
+
+        // Stop based on backend
+        switch playerBackend {
+        case .avplayer:
+            player?.pause()
+        case .mpv:
+            // Shutdown MPV completely to stop rendering
+            mpvController?.shutdown()
+        }
+    }
+
     // MARK: - Cleanup
 
     private func stopTranscodeSession() async {
@@ -651,13 +818,25 @@ class PlayerViewModel: ObservableObject {
             // Stop the transcode session
             await self.stopTranscodeSession()
 
-            if let observer = self.timeObserver {
-                self.player?.removeTimeObserver(observer)
-                self.timeObserver = nil
+            // Clean up based on backend
+            switch self.playerBackend {
+            case .avplayer:
+                if let observer = self.timeObserver {
+                    self.player?.removeTimeObserver(observer)
+                    self.timeObserver = nil
+                }
+                self.player?.pause()
+                self.player = nil
+            case .mpv:
+                // MPV shutdown already called in stopPlayback(), just release the controller
+                // Shutdown is idempotent, so it's safe to call again if not already shut down
+                if let controller = self.mpvController, !controller.isShutDown {
+                    controller.shutdown()
+                }
+                self.mpvController = nil
             }
+
             self.stopProgressTracking()
-            self.player?.pause()
-            self.player = nil
             self.cancellables.removeAll()
         }
     }
