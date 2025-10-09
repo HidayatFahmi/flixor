@@ -1,0 +1,381 @@
+//
+//  HomeView.swift
+//  FlixorMac
+//
+//  Home screen with Billboard, Continue Watching, etc.
+//
+
+import SwiftUI
+
+struct HomeView: View {
+    @StateObject private var viewModel = HomeViewModel()
+    @State private var scrollOffset: CGFloat = 0
+    @State private var activePlayer: MediaItem? = nil
+    @State private var selectedDetails: MediaItem? = nil
+    @State private var goDetails: Bool = false
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if let error = viewModel.error {
+                ErrorView(message: error) {
+                    Task {
+                        await viewModel.refresh()
+                    }
+                }
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Hidden link used for programmatic navigation to full-screen Details
+                        NavigationLink(destination: OptionalDetailsDestination(item: selectedDetails), isActive: $goDetails) { EmptyView() }
+                            .frame(width: 0, height: 0)
+                            .hidden()
+
+                        // Spacer to separate hero from transparent nav
+                        Color.clear.frame(height: 72)
+
+                        // Billboard Hero or skeleton
+                        Group {
+                            if !viewModel.billboardItems.isEmpty {
+                                BillboardSection(viewModel: viewModel)
+                            } else {
+                                HeroSkeleton()
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+
+                        // Spacing below hero
+                        Color.clear.frame(height: 24)
+
+                        // Content sections (mirror web order)
+                        VStack(spacing: 40) {
+                            if viewModel.isLoading {
+                                // Continue Watching (landscape)
+                                SkeletonCarouselRow(itemWidth: 420, itemCount: 4, cardType: .landscape)
+                            // Popular on Plex (landscape)
+                            SkeletonCarouselRow(itemWidth: 420, itemCount: 8, cardType: .landscape)
+                            // Trending Now (landscape)
+                            SkeletonCarouselRow(itemWidth: 420, itemCount: 8, cardType: .landscape)
+                            } else {
+                                // Continue Watching (second in order per web)
+                                if !viewModel.continueWatchingItems.isEmpty {
+                                    ContinueWatchingSection(viewModel: viewModel)
+                                }
+
+                                // Extra sections (Popular on Plex, Trending Now, Watchlist, Genres, Trakt)
+                                ForEach(viewModel.extraSections) { section in
+                                    LandscapeSectionView(section: section, onTap: { item in
+                                        viewModel.showItemDetails(item)
+                                    })
+                                }
+
+                                // Keep legacy rows out of this exact web-matching Home for now
+                            }
+                        }
+                        .padding(.vertical, 40)
+                    }
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear
+                                .preference(
+                                    key: ScrollOffsetPreferenceKey.self,
+                                    value: geometry.frame(in: .named("scroll")).origin.y
+                                )
+                        }
+                    )
+                }
+                .coordinateSpace(name: "scroll")
+                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                    scrollOffset = value
+                }
+            }
+
+            // Top Navigation Bar (overlay)
+            TopNavBar(scrollOffset: $scrollOffset)
+                .environmentObject(SessionManager.shared)
+        }
+        .background(HomeBackground())
+        .navigationTitle("")
+        .task {
+            print("📱 [HomeView] .task triggered - billboardItems.isEmpty: \(viewModel.billboardItems.isEmpty), isLoading: \(viewModel.isLoading)")
+            if viewModel.billboardItems.isEmpty && !viewModel.isLoading {
+                await viewModel.loadHomeScreen()
+            }
+        }
+        .onDisappear {
+            viewModel.stopBillboardRotation()
+        }
+        .toast()
+        .onChange(of: viewModel.pendingAction) { action in
+            guard let action = action else { return }
+            switch action {
+            case .play(let item):
+                activePlayer = item
+            case .details(let item):
+                selectedDetails = item
+                goDetails = true
+            }
+            viewModel.pendingAction = nil
+        }
+        .sheet(item: $activePlayer) { item in
+            PlayerView(item: item)
+        }
+    }
+}
+
+// Hidden NavigationLink to push Details full-screen on macOS 13+
+private struct OptionalDetailsDestination: View {
+    let item: MediaItem?
+    var body: some View {
+        Group {
+            if let item = item { DetailsView(item: item) } else { EmptyView() }
+        }
+    }
+}
+
+// MARK: - Billboard Section
+
+struct BillboardSection: View {
+    @ObservedObject var viewModel: HomeViewModel
+
+    var currentItem: MediaItem? {
+        guard viewModel.currentBillboardIndex < viewModel.billboardItems.count else {
+            return nil
+        }
+        return viewModel.billboardItems[viewModel.currentBillboardIndex]
+    }
+
+    var body: some View {
+        Group {
+            if let item = currentItem {
+                BillboardView(
+                    item: item,
+                    onPlay: {
+                        viewModel.playItem(item)
+                    },
+                    onInfo: {
+                        viewModel.showItemDetails(item)
+                    },
+                    onMyList: {
+                        viewModel.toggleMyList(item)
+                    }
+                )
+                .id(item.id) // Force recreation on item change
+                .transition(.opacity)
+            }
+        }
+    }
+}
+
+// MARK: - Hero Skeleton
+
+struct HeroSkeleton: View {
+    private let height: CGFloat = 600
+
+    var body: some View {
+        SkeletonView(height: height, cornerRadius: 22)
+            .frame(maxWidth: .infinity)
+            .background(Color.black.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+    }
+}
+
+// MARK: - Continue Watching Section
+
+struct ContinueWatchingSection: View {
+    @ObservedObject var viewModel: HomeViewModel
+
+    var body: some View {
+        CarouselRow(
+            title: "Continue Watching",
+            items: viewModel.continueWatchingItems,
+            itemWidth: 420,
+            spacing: 16,
+            showSeeAll: false,
+            rowHeight: (420 * 0.5) + 80
+        ) { item in
+            ContinueCard(item: item, width: 420) {
+                viewModel.playItem(item)
+            }
+        }
+    }
+}
+
+// MARK: - On Deck Section
+
+struct OnDeckSection: View {
+    @ObservedObject var viewModel: HomeViewModel
+
+    var body: some View {
+        CarouselRow(
+            title: "On Deck",
+            items: viewModel.onDeckItems,
+            itemWidth: 420,
+            spacing: 16,
+            showSeeAll: false,
+            rowHeight: (420 * 0.5) + 56
+        ) { item in
+            LandscapeCard(item: item, width: 420) {
+                viewModel.showItemDetails(item)
+            }
+        }
+    }
+}
+
+// MARK: - Recently Added Section
+
+struct RecentlyAddedSection: View {
+    @ObservedObject var viewModel: HomeViewModel
+
+    var body: some View {
+        CarouselRow(
+            title: "Recently Added",
+            items: viewModel.recentlyAddedItems,
+            itemWidth: 420,
+            spacing: 16,
+            showSeeAll: true,
+            rowHeight: (420 * 0.5) + 56
+        ) { item in
+            LandscapeCard(item: item, width: 420) {
+                viewModel.showItemDetails(item)
+            }
+        } onSeeAll: {
+            // TODO: Navigate to library view
+            print("See all recently added")
+        }
+    }
+}
+
+// MARK: - Library Section
+
+struct LibrarySectionView: View {
+    let section: LibrarySection
+    @ObservedObject var viewModel: HomeViewModel
+
+    var body: some View {
+        CarouselRow(
+            title: section.title,
+            items: section.items,
+            itemWidth: 150,
+            showSeeAll: section.totalCount > section.items.count
+        ) { item in
+            PosterCard(item: item, width: 150) {
+                viewModel.showItemDetails(item)
+            }
+        } onSeeAll: {
+            // TODO: Navigate to library view filtered by section
+            print("See all in \(section.title)")
+        }
+    }
+}
+
+// MARK: - Generic Landscape Section (for extraSections)
+
+struct LandscapeSectionView: View {
+    let section: LibrarySection
+    var onTap: (MediaItem) -> Void
+
+    var body: some View {
+        CarouselRow(
+            title: section.title,
+            items: section.items,
+            itemWidth: 420,
+            spacing: 16,
+            showSeeAll: false,
+            rowHeight: (420 * 0.5) + 56
+        ) { item in
+            LandscapeCard(item: item, width: 420) {
+                // For non-continue rows, open details by default
+                onTap(item)
+            }
+        }
+    }
+}
+
+// MARK: - Home Background Gradient (approximate web bg-home-gradient)
+
+struct HomeBackground: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(hex: 0x0a0a0a), Color(hex: 0x0f0f10), Color(hex: 0x0b0c0d)], startPoint: .top, endPoint: .bottom)
+
+            // Muted teal glow (top-right)
+            RadialGradient(gradient: Gradient(colors: [Color(red: 20/255, green: 76/255, blue: 84/255, opacity: 0.42), Color(red: 20/255, green: 76/255, blue: 84/255, opacity: 0.20), .clear]),
+                            center: .init(x: 0.84, y: 0.06), startRadius: 0, endRadius: 800)
+
+            // Deep red glow (bottom-left)
+            RadialGradient(gradient: Gradient(colors: [Color(red: 122/255, green: 22/255, blue: 18/255, opacity: 0.44), Color(red: 122/255, green: 22/255, blue: 18/255, opacity: 0.20), .clear]),
+                            center: .init(x: 0.10, y: 0.92), startRadius: 0, endRadius: 800)
+
+            // Subtle echoes
+            RadialGradient(gradient: Gradient(colors: [Color(red: 122/255, green: 22/255, blue: 18/255, opacity: 0.12), Color(red: 122/255, green: 22/255, blue: 18/255, opacity: 0.06), .clear]),
+                            center: .init(x: 0.08, y: 0.08), startRadius: 0, endRadius: 700)
+
+            RadialGradient(gradient: Gradient(colors: [Color(red: 20/255, green: 76/255, blue: 84/255, opacity: 0.12), Color(red: 20/255, green: 76/255, blue: 84/255, opacity: 0.06), .clear]),
+                            center: .init(x: 0.92, y: 0.92), startRadius: 0, endRadius: 700)
+
+            // Soft vignette
+            RadialGradient(gradient: Gradient(colors: [.clear, Color.black.opacity(0.22)]), center: .init(x: 0.5, y: 0.45), startRadius: 300, endRadius: 1200)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+extension Color {
+    init(hex: UInt, alpha: Double = 1.0) {
+        self.init(
+            .sRGB,
+            red: Double((hex >> 16) & 0xff) / 255,
+            green: Double((hex >> 8) & 0xff) / 255,
+            blue: Double(hex & 0xff) / 255,
+            opacity: alpha
+        )
+    }
+}
+
+// MARK: - Error View
+
+struct ErrorView: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 60))
+                .foregroundStyle(.orange)
+
+            Text("Something went wrong")
+                .font(.title2.bold())
+
+            Text(message)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            Button(action: onRetry) {
+                Text("Try Again")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 12)
+                    .background(Color.orange)
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+#Preview {
+    HomeView()
+        .environmentObject(SessionManager.shared)
+        .environmentObject(APIClient.shared)
+        .frame(width: 1200, height: 800)
+}

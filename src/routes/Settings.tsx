@@ -53,7 +53,7 @@ export default function Settings() {
                 )}
               </div>
               {!initial.plexAccountToken && !auth.pinId && (
-                <button className="btn" onClick={async()=>{
+                <button className="btn" disabled={selectedServer} onClick={async()=>{
                   const cid = initial.plexClientId || crypto.randomUUID();
                   saveSettings({ plexClientId: cid });
                   const pin:any = await apiClient.createPlexPin(cid);

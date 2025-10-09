@@ -502,20 +502,32 @@ export class PlexClient {
    * Get streaming URL
    */
   async getStreamingUrl(ratingKey: string, options: any = {}): Promise<string> {
-    // Build a universal start URL (DASH MPD) similar to Plex Web behavior (mirror frontend params)
+    // Detect client type - use HLS for native apps (iOS/macOS), DASH for web
+    const protocol = options.protocol || 'hls'; // Default to HLS
+    const extension = protocol === 'hls' ? 'm3u8' : 'mpd';
+
+    // Build a universal start URL similar to Plex Web behavior (mirror frontend params)
     const usp = new URLSearchParams();
     usp.set('hasMDE', '1');
     usp.set('path', `/library/metadata/${ratingKey}`);
     usp.set('mediaIndex', String(options.mediaIndex ?? 0));
     usp.set('partIndex', String(options.partIndex ?? 0));
-    usp.set('protocol', 'dash');
+    usp.set('protocol', protocol);
     usp.set('fastSeek', '1');
     usp.set('directPlay', '0');
     usp.set('directStream', '1');
     usp.set('directStreamAudio', '1');
     usp.set('subtitleSize', '100');
     usp.set('audioBoost', '100');
-    usp.set('manifestSubtitles', '1');
+
+    if (protocol === 'hls') {
+      // HLS-specific parameters
+      usp.set('segmentSize', '4');
+    } else {
+      // DASH-specific parameters
+      usp.set('manifestSubtitles', '1');
+    }
+
     // Frontend used autoAdjustQuality=0 unless explicitly enabled
     usp.set('autoAdjustQuality', options.autoAdjustQuality ? '1' : '0');
     if (options.quality != null) usp.set('maxVideoBitrate', String(Number(options.quality)));
@@ -523,7 +535,7 @@ export class PlexClient {
     // Omit audio/subtitle stream selection from the URL like the legacy frontend dash path
     // Note: We intentionally do not append token; our proxy layer will add it when fetching
     const sep = usp.toString().length ? '?' : '';
-    const path = `/video/:/transcode/universal/start.mpd${sep}${usp.toString()}`;
+    const path = `/video/:/transcode/universal/start.${extension}${sep}${usp.toString()}`;
     const urlBase = `${this.axiosClient.defaults.baseURL}${path}`;
 
     // Append X-Plex headers as query params to mirror frontend behavior

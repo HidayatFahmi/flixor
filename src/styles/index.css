@@ -8,6 +8,12 @@ html, body, #root { overflow-x: hidden; }
 /* Scrollbar tweaks */
 *::-webkit-scrollbar { height: 8px; width: 10px; }
 *::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 4px; }
+body {
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* IE 10 and IE 11 */
+  user-select: none; /* Standard syntax */
+}
 
 /* Skeleton shimmer */
 .skeleton {

@@ -14,3 +14,5 @@ backend/cache/images/
 backend/cache/images/plex/
 .expo
 *.md
+.build
+build

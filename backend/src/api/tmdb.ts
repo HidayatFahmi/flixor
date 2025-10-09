@@ -179,6 +179,27 @@ router.get('/tv/:id',
 );
 
 /**
+ * Get TV season details
+ * GET /api/tmdb/tv/:id/season/:seasonNumber
+ */
+router.get('/tv/:id/season/:seasonNumber',
+  tmdbCache('details'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id, seasonNumber } = req.params;
+
+      const client = await getTMDBClient(req);
+      const data = await client.getTVSeasonDetails(id, parseInt(seasonNumber));
+
+      res.json(data);
+    } catch (error: any) {
+      logger.error('Failed to get TV season details', error);
+      next(new AppError(error.message || 'Failed to get TV season details', 500));
+    }
+  }
+);
+
+/**
  * Get movie credits
  * GET /api/tmdb/movie/:id/credits
  */
@@ -319,6 +340,31 @@ router.get('/:mediaType/:id/videos',
     } catch (error: any) {
       logger.error('Failed to get videos', error);
       next(new AppError(error.message || 'Failed to get videos', 500));
+    }
+  }
+);
+
+/**
+ * Get external IDs (IMDb, TVDb, etc.)
+ * GET /api/tmdb/:mediaType/:id/external_ids
+ */
+router.get('/:mediaType/:id/external_ids',
+  tmdbCache('details'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { mediaType, id } = req.params;
+
+      if (!['movie', 'tv'].includes(mediaType)) {
+        throw new AppError('Invalid media type', 400);
+      }
+
+      const client = await getTMDBClient(req);
+      const data = await client.getExternalIds(mediaType as any, id);
+
+      res.json(data);
+    } catch (error: any) {
+      logger.error('Failed to get external IDs', error);
+      next(new AppError(error.message || 'Failed to get external IDs', 500));
     }
   }
 );
