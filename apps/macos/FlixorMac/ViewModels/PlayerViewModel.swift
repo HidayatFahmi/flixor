@@ -46,6 +46,7 @@ class PlayerViewModel: ObservableObject {
     private var sessionId: String?
     private var plexBaseUrl: String?
     private var plexToken: String?
+    private var currentURLIsHLS: Bool = false
 
     init(item: MediaItem) {
         self.item = item
@@ -142,31 +143,75 @@ class PlayerViewModel: ObservableObject {
 
             print("📺 [Player] Got access token")
 
-            // Use backend streaming endpoint (it handles HLS properly)
-            print("📺 [Player] Requesting stream URL from backend")
+            // First try: Direct Play via Plex part URL if available
+            struct MetaMedia: Decodable {
+                struct Part: Decodable { let key: String? }
+                let Part: [Part]?
+                let container: String?
+                let videoCodec: String?
+                let audioCodec: String?
+            }
+            struct MetaResponse: Decodable { let Media: [MetaMedia]? }
+            var directURL: URL? = nil
+            do {
+                let meta: MetaResponse = try await api.get("/api/plex/metadata/\(ratingKey)")
+                let m = meta.Media?.first
+                // Gate direct play: avoid MKV, HEVC/Dolby Vision/TrueHD containers/codecs known to fail in AVFoundation
+                let container = (m?.container ?? "").lowercased()
+                let vcodec = (m?.videoCodec ?? "").lowercased()
+                let acodec = (m?.audioCodec ?? "").lowercased()
+                let unsafeContainer = container.contains("mkv") || container.contains("mka")
+                let unsafeVideo = vcodec.contains("hevc") || vcodec.contains("dvh") || vcodec.contains("dvhe")
+                let unsafeAudio = acodec.contains("truehd") || acodec.contains("eac3") // macOS often lacks passthrough
+                let allowDirect = !(unsafeContainer || unsafeVideo || unsafeAudio)
 
-            struct StreamResponse: Codable {
-                let url: String
+                if allowDirect, let key = m?.Part?.first?.key, !key.isEmpty {
+                    let direct = "\(baseUrl)\(key)?X-Plex-Token=\(token)"
+                    directURL = URL(string: direct)
+                    if directURL != nil { print("🎯 [Player] Attempting Direct Play: \(direct)") }
+                } else {
+                    if !allowDirect { print("🚫 [Player] Skipping Direct Play due to incompatible container/codec: cont=\(container), v=\(vcodec), a=\(acodec)") }
+                }
+            } catch {
+                print("⚠️ [Player] Could not fetch metadata for direct play: \(error)")
             }
 
-            let response: StreamResponse = try await api.get(
-                "/api/plex/stream/\(ratingKey)",
-                queryItems: [URLQueryItem(name: "protocol", value: "hls")]
-            )
-
-            print("📺 [Player] Received stream URL: \(response.url)")
-
-            guard let startURL = URL(string: response.url) else {
-                throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid stream URL"])
+            var startURL: URL
+            if let d = directURL {
+                self.streamURL = d
+                startURL = d
+            } else {
+                // Fallback: backend HLS endpoint
+                print("📺 [Player] Requesting stream URL from backend (HLS)")
+                struct StreamResponse: Codable { let url: String }
+                let response: StreamResponse = try await api.get(
+                    "/api/plex/stream/\(ratingKey)",
+                    queryItems: [
+                        URLQueryItem(name: "protocol", value: "hls"),
+                        URLQueryItem(name: "directPlay", value: "0"),
+                        URLQueryItem(name: "directStream", value: "0"),
+                        URLQueryItem(name: "autoAdjustQuality", value: "0"),
+                        URLQueryItem(name: "maxVideoBitrate", value: "20000"),
+                        URLQueryItem(name: "videoCodec", value: "h264"),
+                        URLQueryItem(name: "audioCodec", value: "aac"),
+                        URLQueryItem(name: "container", value: "mpegts")
+                    ]
+                )
+                print("📺 [Player] Received stream URL: \(response.url)")
+                guard let u = URL(string: response.url) else {
+                    throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid stream URL"])
+                }
+                startURL = u
+                self.currentURLIsHLS = true
             }
 
             // The start.m3u8 URL needs to be called to initiate the session
             // Then we use the session-based URL for actual playback
-            if response.url.contains("start.m3u8") {
+            if startURL.absoluteString.contains("start.m3u8") {
                 print("📺 [Player] Starting transcode session")
 
                 // Extract session ID from URL
-                if let sessionParam = URLComponents(string: response.url)?.queryItems?.first(where: { $0.name == "session" })?.value {
+                if let sessionParam = URLComponents(string: startURL.absoluteString)?.queryItems?.first(where: { $0.name == "session" })?.value {
                     self.sessionId = sessionParam
                 }
 
@@ -182,7 +227,7 @@ class PlayerViewModel: ObservableObject {
                 // Build session URL
                 guard let sessionId = self.sessionId,
                       let baseUrlString = startURL.absoluteString.components(separatedBy: "/video/").first,
-                      let token = URLComponents(string: response.url)?.queryItems?.first(where: { $0.name == "X-Plex-Token" })?.value else {
+                      let token = URLComponents(string: startURL.absoluteString)?.queryItems?.first(where: { $0.name == "X-Plex-Token" })?.value else {
                     throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to extract session info"])
                 }
 
@@ -202,11 +247,17 @@ class PlayerViewModel: ObservableObject {
             guard let finalURL = self.streamURL else {
                 throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Stream URL not set"])
             }
-            let asset = AVURLAsset(url: finalURL)
+            // Configure asset with better buffering
+            let asset = AVURLAsset(url: finalURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
             let playerItem = AVPlayerItem(asset: asset)
-            // Buffering preferences for smoother playback
-            playerItem.preferredForwardBufferDuration = 20 // seconds to buffer ahead
+            // Buffering preferences
+            if currentURLIsHLS || startURL.absoluteString.contains("m3u8") {
+                playerItem.preferredForwardBufferDuration = 45 // HLS: buffer more
+            } else {
+                playerItem.preferredForwardBufferDuration = 10 // Direct play: lighter buffer
+            }
             playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+            playerItem.preferredPeakBitRate = 0
 
             // Add error observer
             playerItem.publisher(for: \.error)
@@ -223,13 +274,15 @@ class PlayerViewModel: ObservableObject {
 
             self.player = AVPlayer(playerItem: playerItem)
             self.player?.automaticallyWaitsToMinimizeStalling = true
+            self.player?.actionAtItemEnd = .pause
+            self.player?.allowsExternalPlayback = false
 
             // Setup observers
             setupTimeObserver()
             setupPlayerObservers(playerItem: playerItem)
             setupPlayerStateObservers()
 
-            // Auto-play. Actual isLoading will be driven by timeControlStatus
+            // Auto-play immediately
             self.player?.play()
             self.isPlaying = true
 
@@ -276,8 +329,13 @@ class PlayerViewModel: ObservableObject {
                         self.applyInitialSeekIfNeeded()
                     case .failed:
                         print("❌ [Player] Failed: \(playerItem.error?.localizedDescription ?? "Unknown error")")
-                        self.error = playerItem.error?.localizedDescription ?? "Playback failed"
-                        self.isLoading = false
+                        if self.currentURLIsHLS == false {
+                            print("↩️ [Player] Direct play failed; falling back to HLS")
+                            await self.reloadAsHLSFallback()
+                        } else {
+                            self.error = playerItem.error?.localizedDescription ?? "Playback failed"
+                            self.isLoading = false
+                        }
                     case .unknown:
                         print("⏳ [Player] Status unknown")
                     @unknown default:
@@ -305,11 +363,17 @@ class PlayerViewModel: ObservableObject {
                     guard let self = self else { return }
                     print("⚠️ [Player] Playback stalled")
                     self.isLoading = true
+                    if let it = self.player?.currentItem {
+                        it.preferredForwardBufferDuration = max(30, it.preferredForwardBufferDuration)
+                    }
+                    // Nudge playback
+                    self.player?.pause()
+                    self.player?.play()
                 }
             }
             .store(in: &cancellables)
 
-        // Observe buffering-related properties to toggle spinner reliably
+        // Observe buffering-related properties
         playerItem.publisher(for: \.isPlaybackLikelyToKeepUp)
             .sink { [weak self] keepUp in
                 Task { @MainActor [weak self] in
@@ -351,6 +415,52 @@ class PlayerViewModel: ObservableObject {
                 }
             }
             .store(in: &kvoCancellables)
+    }
+
+    private func reloadAsHLSFallback() async {
+        // Build HLS URL and replace current item
+        do {
+            let ratingKey = item.id.replacingOccurrences(of: "plex:", with: "")
+            struct StreamResponse: Codable { let url: String }
+            let response: StreamResponse = try await api.get(
+                "/api/plex/stream/\(ratingKey)",
+                queryItems: [
+                    URLQueryItem(name: "protocol", value: "hls"),
+                    URLQueryItem(name: "directPlay", value: "0"),
+                    URLQueryItem(name: "directStream", value: "0"),
+                    URLQueryItem(name: "autoAdjustQuality", value: "0"),
+                    URLQueryItem(name: "maxVideoBitrate", value: "20000"),
+                    URLQueryItem(name: "videoCodec", value: "h264"),
+                    URLQueryItem(name: "audioCodec", value: "aac"),
+                    URLQueryItem(name: "container", value: "mpegts")
+                ]
+            )
+            guard let url = URL(string: response.url) else {
+                throw NSError(domain: "PlayerError", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid HLS URL"])
+            }
+            self.streamURL = url
+            self.currentURLIsHLS = true
+
+            let asset = AVURLAsset(url: url)
+            let item = AVPlayerItem(asset: asset)
+            item.preferredForwardBufferDuration = 45
+            item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+            item.preferredPeakBitRate = 0
+
+            if self.player == nil { self.player = AVPlayer(playerItem: item) } else { self.player?.replaceCurrentItem(with: item) }
+            self.player?.automaticallyWaitsToMinimizeStalling = true
+            self.player?.allowsExternalPlayback = false
+
+            setupPlayerObservers(playerItem: item)
+            setupPlayerStateObservers()
+            self.player?.play()
+            self.isPlaying = true
+            self.isLoading = false
+        } catch {
+            print("❌ [Player] HLS fallback failed: \(error)")
+            self.error = "Playback failed: \(error.localizedDescription)"
+            self.isLoading = false
+        }
     }
 
     private func applyInitialSeekIfNeeded() {
