@@ -82,16 +82,18 @@ struct LandscapeCard: View {
 
     // MARK: - TMDB Backdrop Upgrade (original size via proxy)
     private func fetchTMDBBackdrop() async {
+        print("🎬 [LandscapeCard] Fetching TMDB backdrop for: \(item.title) (id: \(item.id))")
         // Only attempt upgrade when underlying image is Plex-based or missing
         // Try to resolve TMDB backdrop via metadata mapping
         if let url = try? await resolveTMDBBackdropURL(for: item, width: Int(width * 2), height: Int(height * 2)) {
+            print("✅ [LandscapeCard] Got TMDB backdrop for: \(item.title)")
             await MainActor.run { self.altURL = url }
+        } else {
+            print("❌ [LandscapeCard] No TMDB backdrop for: \(item.title), using Plex image")
         }
     }
 
     private func resolveTMDBBackdropURL(for item: MediaItem, width: Int, height: Int) async throws -> URL? {
-        let api = APIClient.shared
-
         // Case 1: TMDB id already encoded in item.id (tmdb:movie:123 or tmdb:tv:123)
         if item.id.hasPrefix("tmdb:") {
             let parts = item.id.split(separator: ":")
@@ -105,19 +107,33 @@ struct LandscapeCard: View {
             return nil
         }
 
-        // Case 2: Plex item – resolve TMDB guid from metadata
+        // Case 2: Plex item with plex: prefix – resolve TMDB guid from metadata
         if item.id.hasPrefix("plex:") {
             let rk = String(item.id.dropFirst(5))
-            struct PlexMeta: Codable { let type: String?; let Guid: [PlexGuid]? }
-            struct PlexGuid: Codable { let id: String? }
-            let meta: PlexMeta = try await api.get("/api/plex/metadata/\(rk)")
-            let mediaType = (meta.type == "movie") ? "movie" : "tv"
-            if let guid = meta.Guid?.compactMap({ $0.id }).first(where: { $0.contains("tmdb://") || $0.contains("themoviedb://") }),
-               let tid = guid.components(separatedBy: "://").last {
-                if let url = try await fetchTMDBBestBackdropURL(mediaType: mediaType, id: tid, width: width, height: height) {
-                    return url
-                }
-            }
+            return try await fetchTMDBBackdropForPlexItem(ratingKey: rk, width: width, height: height)
+        }
+
+        // Case 3: Raw numeric ID (Plex rating key without prefix)
+        // This happens for library items loaded from /api/plex/library/{key}/all
+        if item.id.allSatisfy({ $0.isNumber }) {
+            print("🔍 [LandscapeCard] Detected numeric ID, treating as Plex rating key: \(item.id)")
+            return try await fetchTMDBBackdropForPlexItem(ratingKey: item.id, width: width, height: height)
+        }
+
+        return nil
+    }
+
+    private func fetchTMDBBackdropForPlexItem(ratingKey: String, width: Int, height: Int) async throws -> URL? {
+        let api = APIClient.shared
+        struct PlexMeta: Codable { let type: String?; let Guid: [PlexGuid]? }
+        struct PlexGuid: Codable { let id: String? }
+
+        let meta: PlexMeta = try await api.get("/api/plex/metadata/\(ratingKey)")
+        let mediaType = (meta.type == "movie") ? "movie" : "tv"
+
+        if let guid = meta.Guid?.compactMap({ $0.id }).first(where: { $0.contains("tmdb://") || $0.contains("themoviedb://") }),
+           let tid = guid.components(separatedBy: "://").last {
+            return try await fetchTMDBBestBackdropURL(mediaType: mediaType, id: tid, width: width, height: height)
         }
         return nil
     }
@@ -126,16 +142,18 @@ struct LandscapeCard: View {
         struct TMDBImages: Codable { let backdrops: [TMDBImage]? }
         struct TMDBImage: Codable { let file_path: String?; let iso_639_1: String?; let vote_average: Double? }
         let api = APIClient.shared
-        let imgs: TMDBImages = try await api.get("/api/tmdb/\(mediaType)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,null")])
+        let imgs: TMDBImages = try await api.get("/api/tmdb/\(mediaType)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,hi,null")])
         let backs = imgs.backdrops ?? []
         if backs.isEmpty { return nil }
         let pick: ([TMDBImage]) -> TMDBImage? = { arr in
             return arr.sorted { ($0.vote_average ?? 0) > ($1.vote_average ?? 0) }.first
         }
+        // Priority: en/hi with titles > null (no text) > any other language
         let en = pick(backs.filter { $0.iso_639_1 == "en" })
+        let hi = pick(backs.filter { $0.iso_639_1 == "hi" })
         let nul = pick(backs.filter { $0.iso_639_1 == nil })
         let any = pick(backs)
-        let sel = en ?? nul ?? any
+        let sel = en ?? hi ?? nul ?? any
         guard let path = sel?.file_path else { return nil }
         let full = "https://image.tmdb.org/t/p/original\(path)"
         return ImageService.shared.proxyImageURL(url: full, width: width, height: height)

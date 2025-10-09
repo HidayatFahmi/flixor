@@ -9,13 +9,12 @@ import SwiftUI
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
-    @State private var scrollOffset: CGFloat = 0
     @State private var activePlayer: MediaItem? = nil
     @State private var selectedDetails: MediaItem? = nil
     @State private var goDetails: Bool = false
 
     var body: some View {
-        ZStack(alignment: .top) {
+        Group {
             if let error = viewModel.error {
                 ErrorView(message: error) {
                     Task {
@@ -29,9 +28,6 @@ struct HomeView: View {
                         NavigationLink(destination: OptionalDetailsDestination(item: selectedDetails), isActive: $goDetails) { EmptyView() }
                             .frame(width: 0, height: 0)
                             .hidden()
-
-                        // Spacer to separate hero from transparent nav
-                        Color.clear.frame(height: 72)
 
                         // Billboard Hero or skeleton
                         Group {
@@ -74,25 +70,8 @@ struct HomeView: View {
                         }
                         .padding(.vertical, 40)
                     }
-                    .background(
-                        GeometryReader { geometry in
-                            Color.clear
-                                .preference(
-                                    key: ScrollOffsetPreferenceKey.self,
-                                    value: geometry.frame(in: .named("scroll")).origin.y
-                                )
-                        }
-                    )
-                }
-                .coordinateSpace(name: "scroll")
-                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                    scrollOffset = value
                 }
             }
-
-            // Top Navigation Bar (overlay)
-            TopNavBar(scrollOffset: $scrollOffset)
-                .environmentObject(SessionManager.shared)
         }
         .background(HomeBackground())
         .navigationTitle("")

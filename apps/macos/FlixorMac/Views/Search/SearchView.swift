@@ -26,9 +26,6 @@ struct SearchView: View {
                     .frame(width: 0, height: 0)
                     .hidden()
 
-                    // Spacer for top nav bar
-                    Color.clear.frame(height: 72)
-
                     // Search Input Field
                     SearchInputField(query: $viewModel.query)
                         .padding(.horizontal, 20)
@@ -44,22 +41,21 @@ struct SearchView: View {
                         case .searching:
                             LoadingView(message: "Searching...")
                         case .results:
-                            if viewModel.searchResults.isEmpty {
-                                EmptyStateView(query: viewModel.query)
-                            } else {
+                            let hasResults = !viewModel.plexResults.isEmpty ||
+                                           !viewModel.tmdbMovies.isEmpty ||
+                                           !viewModel.tmdbShows.isEmpty
+                            if hasResults {
                                 SearchResultsView(viewModel: viewModel, onTap: { item in
                                     navigateToDetails(item: item)
                                 })
+                            } else {
+                                EmptyStateView(query: viewModel.query)
                             }
                         }
                     }
                     .padding(.top, 24)
                 }
             }
-
-            // Top Navigation Bar
-            TopNavBar(scrollOffset: .constant(0))
-                .environmentObject(SessionManager.shared)
         }
         .navigationTitle("")
         .task {
@@ -132,95 +128,375 @@ struct SearchInputField: View {
     }
 }
 
-// MARK: - Idle State (Popular + Trending)
+// MARK: - Idle State (Grid of Trending Items with Landscape Cards)
 
 struct IdleStateView: View {
     @ObservedObject var viewModel: SearchViewModel
     let onTap: (SearchViewModel.SearchResult) -> Void
 
     var body: some View {
-        VStack(spacing: 40) {
-            // Popular
-            if !viewModel.popularItems.isEmpty {
-                SearchSectionView(
-                    title: "Popular on Plex",
-                    items: viewModel.popularItems,
-                    onTap: onTap
-                )
-            }
-
-            // Trending
-            if !viewModel.trendingItems.isEmpty {
-                SearchSectionView(
-                    title: "Trending Now",
-                    items: viewModel.trendingItems,
-                    onTap: onTap
-                )
-            }
-        }
-        .padding(.horizontal, 20)
-    }
-}
-
-// MARK: - Search Results Grid
-
-struct SearchResultsView: View {
-    @ObservedObject var viewModel: SearchViewModel
-    let onTap: (SearchViewModel.SearchResult) -> Void
-
-    private let columns = [
-        GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 16)
-    ]
-
-    var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Results")
+            Text("Recommended TV Shows & Movies")
                 .font(.title2.bold())
                 .padding(.horizontal, 20)
 
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(viewModel.searchResults) { result in
-                    SearchResultCard(result: result) {
+            // Adaptive grid of trending items using landscape cards
+            TrendingResultsGrid(items: viewModel.trendingItems, onTap: onTap)
+        }
+    }
+}
+
+// MARK: - Trending Results Grid (Landscape Cards)
+
+struct TrendingResultsGrid: View {
+    let items: [SearchViewModel.SearchResult]
+    let onTap: (SearchViewModel.SearchResult) -> Void
+
+    @State private var gridHeight: CGFloat = 200
+
+    var body: some View {
+        GeometryReader { geometry in
+            let availableWidth = geometry.size.width - 40 // Account for horizontal padding
+            let cardWidth: CGFloat = 360
+            let spacing: CGFloat = 16
+            let columns = max(1, Int((availableWidth + spacing) / (cardWidth + spacing)))
+
+            let gridColumns = Array(repeating: GridItem(.flexible(), spacing: spacing), count: columns)
+
+            LazyVGrid(columns: gridColumns, spacing: spacing) {
+                ForEach(items) { result in
+                    SearchLandscapeCard(result: result) {
                         onTap(result)
                     }
                 }
             }
             .padding(.horizontal, 20)
+            .background(
+                GeometryReader { contentGeometry in
+                    Color.clear.preference(
+                        key: TrendingGridHeightKey.self,
+                        value: contentGeometry.size.height
+                    )
+                }
+            )
+            .onPreferenceChange(TrendingGridHeightKey.self) { height in
+                gridHeight = height
+            }
         }
+        .frame(height: gridHeight)
     }
 }
 
-// MARK: - Search Section (for Popular/Trending)
+struct TrendingGridHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 200
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
 
-struct SearchSectionView: View {
-    let title: String
-    let items: [SearchViewModel.SearchResult]
-    let onTap: (SearchViewModel.SearchResult) -> Void
+// MARK: - Search Landscape Card (for trending items)
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 16)
-    ]
+struct SearchLandscapeCard: View {
+    let result: SearchViewModel.SearchResult
+    let onTap: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.title2.bold())
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let height = width * 0.5
 
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(items.prefix(12)) { result in
-                    SearchResultCard(result: result) {
-                        onTap(result)
+            Button(action: onTap) {
+                ZStack(alignment: .bottomLeading) {
+                    // Backdrop image (TMDB with non-null iso_639_1)
+                    Group {
+                        if let url = result.imageURL {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .empty:
+                                    SkeletonView(height: height, cornerRadius: 14)
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                case .failure:
+                                    PlaceholderImage()
+                                @unknown default:
+                                    PlaceholderImage()
+                                }
+                            }
+                        } else {
+                            PlaceholderImage()
+                        }
                     }
+                    .frame(width: width, height: height)
+                    .clipped()
+
+                    // Gradient overlay for text readability
+                    LinearGradient(
+                        colors: [
+                            .black.opacity(0.0),
+                            .black.opacity(0.75)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    // Title overlay
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(result.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+
+                        if let year = result.year {
+                            Text(year)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(12)
                 }
+                .frame(width: width, height: height)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(isHovering ? 0.9 : 0.15), lineWidth: isHovering ? 2 : 1)
+                )
+                .shadow(color: .black.opacity(isHovering ? 0.5 : 0.3), radius: isHovering ? 15 : 8, y: isHovering ? 8 : 4)
+            }
+            .buttonStyle(.plain)
+            .scaleEffect(isHovering ? 1.03 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+            }
+        }
+        .aspectRatio(2.0, contentMode: .fit)
+    }
+}
+
+// MARK: - Search Results (Plex Grid + TMDB Rows + Genre Rows)
+
+struct SearchResultsView: View {
+    @ObservedObject var viewModel: SearchViewModel
+    let onTap: (SearchViewModel.SearchResult) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Plex Results - Adaptive grid with landscape cards
+            if !viewModel.plexResults.isEmpty {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Results from Your Plex")
+                        .font(.title2.bold())
+                        .padding(.horizontal, 20)
+
+                    // Adaptive grid of Plex results using landscape cards
+                    PlexResultsGrid(items: viewModel.plexResults, onTap: onTap)
+                }
+                .padding(.bottom, 32)
+            }
+
+            // TMDB Movies Row
+            if !viewModel.tmdbMovies.isEmpty {
+                SearchHorizontalRow(
+                    title: viewModel.plexResults.isEmpty ? "Top Results" : "Movies",
+                    items: viewModel.tmdbMovies,
+                    onTap: onTap
+                )
+                .padding(.bottom, 32)
+            }
+
+            // TMDB TV Shows Row
+            if !viewModel.tmdbShows.isEmpty {
+                SearchHorizontalRow(
+                    title: "TV Shows",
+                    items: viewModel.tmdbShows,
+                    onTap: onTap
+                )
+                .padding(.bottom, 32)
+            }
+
+            // Genre Rows
+            ForEach(viewModel.genreRows) { genreRow in
+                SearchHorizontalRow(
+                    title: genreRow.title,
+                    items: genreRow.items,
+                    onTap: onTap
+                )
+                .padding(.bottom, 32)
             }
         }
     }
 }
 
-// MARK: - Search Result Card
+// MARK: - Adaptive Plex Results Grid
 
-struct SearchResultCard: View {
+struct PlexResultsGrid: View {
+    let items: [SearchViewModel.SearchResult]
+    let onTap: (SearchViewModel.SearchResult) -> Void
+
+    @State private var gridHeight: CGFloat = 200
+
+    var body: some View {
+        GeometryReader { geometry in
+            let availableWidth = geometry.size.width - 40 // Account for horizontal padding
+            let cardWidth: CGFloat = 360
+            let spacing: CGFloat = 16
+            let columns = max(1, Int((availableWidth + spacing) / (cardWidth + spacing)))
+
+            let gridColumns = Array(repeating: GridItem(.flexible(), spacing: spacing), count: columns)
+
+            LazyVGrid(columns: gridColumns, spacing: spacing) {
+                ForEach(items) { result in
+                    PlexLandscapeCard(result: result) {
+                        onTap(result)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .background(
+                GeometryReader { contentGeometry in
+                    Color.clear.preference(
+                        key: GridHeightPreferenceKey.self,
+                        value: contentGeometry.size.height
+                    )
+                }
+            )
+            .onPreferenceChange(GridHeightPreferenceKey.self) { height in
+                gridHeight = height
+            }
+        }
+        .frame(height: gridHeight)
+    }
+}
+
+struct GridHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 200
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+
+// MARK: - Plex Landscape Card (Adaptive grid item with TMDB backdrop + title)
+
+struct PlexLandscapeCard: View {
     let result: SearchViewModel.SearchResult
+    let onTap: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let height = width * 0.5
+
+            Button(action: onTap) {
+                ZStack(alignment: .bottomLeading) {
+                    // Backdrop image (TMDB already fetched in ViewModel)
+                    Group {
+                        if let url = result.imageURL {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .empty:
+                                    SkeletonView(height: height, cornerRadius: 14)
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                case .failure:
+                                    PlaceholderImage()
+                                @unknown default:
+                                    PlaceholderImage()
+                                }
+                            }
+                        } else {
+                            PlaceholderImage()
+                        }
+                    }
+                    .frame(width: width, height: height)
+                    .clipped()
+
+                    // Gradient overlay for text readability
+                    LinearGradient(
+                        colors: [
+                            .black.opacity(0.0),
+                            .black.opacity(0.75)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    // Title overlay
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(result.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+
+                        if let year = result.year {
+                            Text(year)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(12)
+                }
+                .frame(width: width, height: height)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(isHovering ? 0.9 : 0.15), lineWidth: isHovering ? 2 : 1)
+                )
+                .shadow(color: .black.opacity(isHovering ? 0.5 : 0.3), radius: isHovering ? 15 : 8, y: isHovering ? 8 : 4)
+            }
+            .buttonStyle(.plain)
+            .scaleEffect(isHovering ? 1.03 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+            }
+        }
+        .aspectRatio(2.0, contentMode: .fit)
+    }
+}
+
+// MARK: - Horizontal Row
+
+struct SearchHorizontalRow: View {
+    let title: String
+    let items: [SearchViewModel.SearchResult]
+    let onTap: (SearchViewModel.SearchResult) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 18, weight: .bold))
+                .padding(.horizontal, 20)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(items) { item in
+                        SearchPosterCard(item: item, width: 150) {
+                            onTap(item)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+}
+
+// MARK: - Search Poster Card (for horizontal rows)
+
+struct SearchPosterCard: View {
+    let item: SearchViewModel.SearchResult
+    let width: CGFloat
     let onTap: () -> Void
 
     @State private var isHovering = false
@@ -230,7 +506,7 @@ struct SearchResultCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 // Poster Image
                 Group {
-                    if let url = result.imageURL {
+                    if let url = item.imageURL {
                         AsyncImage(url: url) { phase in
                             switch phase {
                             case .empty:
@@ -249,14 +525,14 @@ struct SearchResultCard: View {
                         PlaceholderImage()
                     }
                 }
-                .frame(width: 150, height: 225)
+                .frame(width: width, height: width * 1.5)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Color.white.opacity(0.10), lineWidth: 1)
                 )
                 .overlay(alignment: .topTrailing) {
-                    if result.available {
+                    if item.available {
                         AvailableBadge()
                             .padding(6)
                     }
@@ -264,20 +540,20 @@ struct SearchResultCard: View {
                 .shadow(color: .black.opacity(isHovering ? 0.4 : 0.2), radius: isHovering ? 12 : 6, y: isHovering ? 6 : 3)
 
                 // Title
-                Text(result.title)
+                Text(item.title)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
                 // Year
-                if let year = result.year {
+                if let year = item.year {
                     Text(year)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 150)
+            .frame(width: width)
         }
         .buttonStyle(.plain)
         .scaleEffect(isHovering ? 1.05 : 1.0)
@@ -287,6 +563,7 @@ struct SearchResultCard: View {
         }
     }
 }
+
 
 // MARK: - Available Badge
 

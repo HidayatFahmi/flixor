@@ -37,7 +37,7 @@ struct BillboardView: View {
     @State private var logoURL: URL? = nil
 
     // Fixed height to prevent overflow
-    private let billboardHeight: CGFloat = 600
+    private let billboardHeight: CGFloat = 1000
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -274,7 +274,8 @@ extension BillboardView {
     private func fetchTMDBBackdropAndLogo(mediaType: String, id: String) async throws -> (URL?, URL?) {
         struct TMDBImages: Codable { let backdrops: [TMDBImage]?; let logos: [TMDBImage]? }
         struct TMDBImage: Codable { let file_path: String?; let iso_639_1: String?; let vote_average: Double? }
-        let imgs: TMDBImages = try await APIClient.shared.get("/api/tmdb/\(mediaType)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,null")])
+        let imgs: TMDBImages = try await APIClient.shared.get("/api/tmdb/\(mediaType)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,hi,null")])
+        print("✅ [IMGS] Response body: \(imgs)...")
 
         // Pick backdrop
         let backs = imgs.backdrops ?? []
@@ -284,7 +285,7 @@ extension BillboardView {
         let enB = pick(backs.filter { $0.iso_639_1 == "en" })
         let nulB = pick(backs.filter { $0.iso_639_1 == nil })
         let anyB = pick(backs)
-        let selB = enB ?? nulB ?? anyB
+        let selB = anyB
         let backdropURL: URL? = {
             guard let path = selB?.file_path else { return nil }
             let full = "https://image.tmdb.org/t/p/original\(path)"

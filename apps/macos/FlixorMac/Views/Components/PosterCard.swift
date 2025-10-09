@@ -67,20 +67,6 @@ struct PosterCard: View {
                             }
                         }
                     }
-
-                    // Play button on hover
-                    if isHovered {
-                        Circle()
-                            .fill(Color.white.opacity(0.9))
-                            .frame(width: 50, height: 50)
-                            .overlay(
-                                Image(systemName: "play.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(.black)
-                                    .offset(x: 2)
-                            )
-                            .transition(.scale.combined(with: .opacity))
-                    }
                 }
             }
             .buttonStyle(.plain)

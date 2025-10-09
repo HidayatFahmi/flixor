@@ -310,8 +310,8 @@ class DetailsViewModel: ObservableObject {
         // Images (logo preferred en)
         struct TImage: Codable { let file_path: String?; let iso_639_1: String?; let vote_average: Double? }
         struct TImages: Codable { let logos: [TImage]?; let backdrops: [TImage]? }
-        let imgs: TImages = try await api.get("/api/tmdb/\(media)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,null")])
-        if let logo = (imgs.logos ?? []).first(where: { $0.iso_639_1 == "en" }) ?? imgs.logos?.first,
+        let imgs: TImages = try await api.get("/api/tmdb/\(media)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,hi,null")])
+        if let logo = (imgs.logos ?? []).first(where: { $0.iso_639_1 == "en" || $0.iso_639_1 == "hi" }) ?? imgs.logos?.first,
            let p = logo.file_path {
             self.logoURL = ImageService.shared.proxyImageURL(url: "https://image.tmdb.org/t/p/w500\(p)")
         }

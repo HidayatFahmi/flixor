@@ -27,7 +27,7 @@ struct FlixorMacApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             AppCommands()
         }

@@ -170,13 +170,13 @@ struct ContinueCard: View {
     private func fetchTMDBBestBackdropURL(mediaType: String, id: String, width: Int, height: Int) async throws -> URL? {
         struct TMDBImages: Codable { let backdrops: [TMDBImage]? }
         struct TMDBImage: Codable { let file_path: String?; let iso_639_1: String?; let vote_average: Double? }
-        let imgs: TMDBImages = try await APIClient.shared.get("/api/tmdb/\(mediaType)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,null")])
+        let imgs: TMDBImages = try await APIClient.shared.get("/api/tmdb/\(mediaType)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,hi,null")])
         let backs = imgs.backdrops ?? []
         if backs.isEmpty { return nil }
         let pick: ([TMDBImage]) -> TMDBImage? = { arr in
             return arr.sorted { ($0.vote_average ?? 0) > ($1.vote_average ?? 0) }.first
         }
-        let en = pick(backs.filter { $0.iso_639_1 == "en" })
+        let en = pick(backs.filter { $0.iso_639_1 == "en" || $0.iso_639_1 == "hi"})
         let nul = pick(backs.filter { $0.iso_639_1 == nil })
         let any = pick(backs)
         let sel = en ?? nul ?? any
