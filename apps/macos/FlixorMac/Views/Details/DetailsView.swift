@@ -14,8 +14,7 @@ struct DetailsView: View {
     let item: MediaItem
     @StateObject private var vm = DetailsViewModel()
     @State private var activeTab: String = "SUGGESTED"
-    @State private var playerItem: MediaItem?
-    @State private var showPlayer = false
+    @EnvironmentObject private var router: NavigationRouter
 
     var body: some View {
         ScrollView {
@@ -53,27 +52,13 @@ struct DetailsView: View {
             await vm.load(for: item)
             if vm.mediaKind == "tv" { activeTab = "EPISODES" }
         }
-        .background(
-            NavigationLink(
-                destination: Group {
-                    if let mediaItem = playerItem {
-                        PlayerView(item: mediaItem)
-                            .navigationTitle("")
-                            .toolbar(.hidden, for: .windowToolbar)
-                    }
-                },
-                isActive: $showPlayer
-            ) {
-                EmptyView()
-            }
-            .hidden()
-        )
+        // Destination for PlayerView is handled at root via NavigationStack(path:)
     }
 
     private func playContent() {
         // If we have a playableId from the ViewModel, use it
         if let playableId = vm.playableId {
-            playerItem = MediaItem(
+            let playerItem = MediaItem(
                 id: playableId,
                 title: vm.title.isEmpty ? item.title : vm.title,
                 type: vm.mediaKind ?? item.type,
@@ -90,14 +75,14 @@ struct DetailsView: View {
                 parentIndex: nil,
                 index: nil
             )
+            router.path.append(playerItem)
         } else {
-            playerItem = item
+            router.path.append(item)
         }
-        showPlayer = true
     }
 
     private func playEpisode(_ episode: DetailsViewModel.Episode) {
-        playerItem = MediaItem(
+        let playerItem = MediaItem(
             id: episode.id,
             title: episode.title,
             type: "episode",
@@ -114,7 +99,7 @@ struct DetailsView: View {
             parentIndex: nil,
             index: nil
         )
-        showPlayer = true
+        router.path.append(playerItem)
     }
 }
 
@@ -240,37 +225,48 @@ private struct DetailsHeroSection: View {
                         .padding(.horizontal, 26)
                         .padding(.vertical, 12)
                         .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
 
-                    Button {
-                        // TODO: hook up My List action
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus")
-                            Text("My List").fontWeight(.semibold)
-                        }
-                        .font(.system(size: 16))
-                        .foregroundStyle(.white.opacity(0.92))
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .background(Color.white.opacity(0.16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(Color.white.opacity(0.28), lineWidth: 1)
+                    if let watchlistId = canonicalWatchlistId,
+                       let mediaType = watchlistMediaType {
+                        WatchlistButton(
+                            canonicalId: watchlistId,
+                            mediaType: mediaType,
+                            plexRatingKey: vm.plexRatingKey,
+                            plexGuid: vm.plexGuid,
+                            tmdbId: vm.tmdbId,
+                            imdbId: nil,
+                            title: vm.title,
+                            year: vm.year.flatMap { Int($0) },
+                            style: .pill
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
-                    .buttonStyle(.plain)
                 }
                 .padding(.top, 4)
             }
-            .padding(.leading, 100)
+            .padding(.leading, 64)
+            .padding(.trailing, 48)
             .padding(.bottom, 64)
         }
         .frame(maxWidth: .infinity)
         .frame(height: heroHeight)
+    }
+
+    private var canonicalWatchlistId: String? {
+        if let playable = vm.playableId { return playable }
+        if let tmdb = vm.tmdbId {
+            let prefix = (vm.mediaKind == "tv") ? "tmdb:tv:" : "tmdb:movie:"
+            return prefix + tmdb
+        }
+        return nil
+    }
+
+    private var watchlistMediaType: MyListViewModel.MediaType? {
+        if vm.mediaKind == "tv" { return .show }
+        if vm.mediaKind == "movie" { return .movie }
+        return .movie
     }
 
     private var castSummary: String {

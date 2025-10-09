@@ -166,6 +166,7 @@ class APIClient: ObservableObject {
             do {
                 let decoder = JSONDecoder()
                 decoder.keyDecodingStrategy = .useDefaultKeys
+                decoder.dateDecodingStrategy = .iso8601
                 let decoded = try decoder.decode(T.self, from: data)
                 print("✅ [API] Successfully decoded response")
                 return decoded

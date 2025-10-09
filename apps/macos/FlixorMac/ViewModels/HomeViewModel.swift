@@ -530,7 +530,172 @@ class HomeViewModel: ObservableObject {
         print("📦 [Home] Fetching continue watching items...")
         let items: [MediaItemFull] = try await apiClient.get("/api/plex/continue")
         print("✅ [Home] Received \(items.count) continue watching items")
-        return items.map { $0.toMediaItem() }
+
+        // Enrich with TMDB backdrop URLs before returning
+        let baseItems = items.map { $0.toMediaItem() }
+        return await enrichWithTMDBBackdrops(baseItems)
+    }
+
+    private func enrichWithTMDBBackdrops(_ items: [MediaItem]) async -> [MediaItem] {
+        print("🎨 [Home] Enriching \(items.count) items with TMDB backdrops...")
+
+        return await withTaskGroup(of: (Int, MediaItem).self) { group in
+            for (index, item) in items.enumerated() {
+                group.addTask {
+                    // Try to fetch TMDB backdrop
+                    if let backdropURL = try? await self.resolveTMDBBackdropForItem(item) {
+                        // Create new MediaItem with TMDB backdrop
+                        let enriched = MediaItem(
+                            id: item.id,
+                            title: item.title,
+                            type: item.type,
+                            thumb: item.thumb,
+                            art: backdropURL, // Replace with TMDB backdrop
+                            year: item.year,
+                            rating: item.rating,
+                            duration: item.duration,
+                            viewOffset: item.viewOffset,
+                            summary: item.summary,
+                            grandparentTitle: item.grandparentTitle,
+                            grandparentThumb: item.grandparentThumb,
+                            grandparentArt: item.grandparentArt,
+                            parentIndex: item.parentIndex,
+                            index: item.index
+                        )
+                        return (index, enriched)
+                    }
+                    // Return original item if TMDB fetch fails
+                    return (index, item)
+                }
+            }
+
+            // Collect results and maintain order
+            var enrichedItems: [(Int, MediaItem)] = []
+            for await result in group {
+                enrichedItems.append(result)
+            }
+
+            // Sort by original index and return just the items
+            let sorted = enrichedItems.sorted { $0.0 < $1.0 }.map { $0.1 }
+            print("✅ [Home] Enriched \(sorted.count) items with TMDB backdrops")
+            return sorted
+        }
+    }
+
+    private func resolveTMDBBackdropForItem(_ item: MediaItem) async throws -> String? {
+        print("🔍 [Home] Resolving TMDB backdrop for: \(item.title) (id: \(item.id), type: \(item.type))")
+
+        // Handle plain numeric IDs (assume they're Plex rating keys)
+        let normalizedId: String
+        if item.id.hasPrefix("plex:") || item.id.hasPrefix("tmdb:") {
+            normalizedId = item.id
+        } else {
+            // Plain numeric ID - treat as Plex rating key
+            normalizedId = "plex:\(item.id)"
+        }
+
+        if normalizedId.hasPrefix("tmdb:") {
+            let parts = normalizedId.split(separator: ":")
+            if parts.count == 3 {
+                let media = (parts[1] == "movie") ? "movie" : "tv"
+                let id = String(parts[2])
+                let url = try await fetchTMDBBestBackdropURLString(mediaType: media, id: id)
+                print("✅ [Home] TMDB backdrop resolved for \(item.title): \(url ?? "nil")")
+                return url
+            }
+        }
+
+        if normalizedId.hasPrefix("plex:") {
+            let rk = String(normalizedId.dropFirst(5))
+
+            // Use MediaItemFull which has all the metadata we need
+            do {
+                let fullItem: MediaItemFull = try await apiClient.get("/api/plex/metadata/\(rk)")
+
+                // For TV episodes, fetch the parent series metadata instead
+                if fullItem.type == "episode", let grandparentRatingKey = fullItem.grandparentRatingKey {
+                    print("📺 [Home] Episode detected, fetching parent series metadata for \(item.title)")
+                    let seriesItem: MediaItemFull = try await apiClient.get("/api/plex/metadata/\(grandparentRatingKey)")
+
+                    // Extract TMDB ID from series Guid array
+                    if let guidArray = seriesItem.Guid {
+                        for guidEntry in guidArray {
+                            if guidEntry.id.contains("tmdb://") || guidEntry.id.contains("themoviedb://") {
+                                if let tmdbId = extractTMDBId(from: guidEntry.id) {
+                                    let url = try await fetchTMDBBestBackdropURLString(mediaType: "tv", id: tmdbId)
+                                    print("✅ [Home] TMDB backdrop resolved for \(item.title) from series Guid array: \(url ?? "nil")")
+                                    return url
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback to series guid string
+                    if let guid = seriesItem.guid {
+                        if let tmdbId = extractTMDBId(from: guid) {
+                            let url = try await fetchTMDBBestBackdropURLString(mediaType: "tv", id: tmdbId)
+                            print("✅ [Home] TMDB backdrop resolved for \(item.title) from series guid string: \(url ?? "nil")")
+                            return url
+                        }
+                    }
+                    print("⚠️ [Home] No TMDB ID found in series metadata for \(item.title)")
+                    return nil
+                }
+
+                // For movies and shows, extract TMDB ID from Guid array (prioritize over guid string)
+                if let guidArray = fullItem.Guid {
+                    for guidEntry in guidArray {
+                        if guidEntry.id.contains("tmdb://") || guidEntry.id.contains("themoviedb://") {
+                            if let tmdbId = extractTMDBId(from: guidEntry.id) {
+                                let mediaType = (fullItem.type == "movie") ? "movie" : "tv"
+                                let url = try await fetchTMDBBestBackdropURLString(mediaType: mediaType, id: tmdbId)
+                                print("✅ [Home] TMDB backdrop resolved for \(item.title) from Guid array: \(url ?? "nil")")
+                                return url
+                            }
+                        }
+                    }
+                }
+
+                // Fallback to guid string field if Guid array not present
+                if let guid = fullItem.guid {
+                    if let tmdbId = extractTMDBId(from: guid) {
+                        let mediaType = (fullItem.type == "movie") ? "movie" : "tv"
+                        let url = try await fetchTMDBBestBackdropURLString(mediaType: mediaType, id: tmdbId)
+                        print("✅ [Home] TMDB backdrop resolved for \(item.title) from guid string: \(url ?? "nil")")
+                        return url
+                    }
+                }
+                print("⚠️ [Home] No TMDB ID found in Guid array or guid string for \(item.title)")
+            } catch {
+                print("❌ [Home] Failed to fetch metadata for \(item.title): \(error)")
+            }
+        }
+
+        return nil
+    }
+
+    private func fetchTMDBBestBackdropURLString(mediaType: String, id: String) async throws -> String? {
+        struct TMDBImages: Codable { let backdrops: [TMDBImage]? }
+        struct TMDBImage: Codable { let file_path: String?; let iso_639_1: String?; let vote_average: Double? }
+
+        let imgs: TMDBImages = try await apiClient.get("/api/tmdb/\(mediaType)/\(id)/images")
+        let backs = imgs.backdrops ?? []
+        if backs.isEmpty { return nil }
+
+        let pick: ([TMDBImage]) -> TMDBImage? = { arr in
+            return arr.sorted { ($0.vote_average ?? 0) > ($1.vote_average ?? 0) }.first
+        }
+
+        // Priority: en > hi > any non-null language > null (no text)
+        let en = pick(backs.filter { $0.iso_639_1 == "en" })
+        let hi = pick(backs.filter { $0.iso_639_1 == "hi" })
+        let withLang = pick(backs.filter { $0.iso_639_1 != nil && $0.iso_639_1 != "en" && $0.iso_639_1 != "hi" })
+        let nul = pick(backs.filter { $0.iso_639_1 == nil })
+        let sel = en ?? hi ?? withLang ?? nul
+
+        guard let path = sel?.file_path else { return nil }
+        let full = "https://image.tmdb.org/t/p/original\(path)"
+        return ImageService.shared.proxyImageURL(url: full, width: 840, height: 420)?.absoluteString
     }
 
     private func fetchRecentlyAdded() async throws -> [MediaItem] {

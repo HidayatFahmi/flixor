@@ -19,7 +19,6 @@
 		A010 /* PlexAuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B010 /* PlexAuthViewModel.swift */; };
 		A011 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B011 /* SearchView.swift */; };
 		A012 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B012 /* LibraryView.swift */; };
-		A013 /* MyListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B013 /* MyListView.swift */; };
 		A014 /* NewPopularView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B014 /* NewPopularView.swift */; };
 		A015 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B015 /* SettingsView.swift */; };
 		A016 /* UserDefaults+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B016 /* UserDefaults+Extensions.swift */; };
@@ -49,9 +48,13 @@
 		A040 /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B040 /* SearchViewModel.swift */; };
 		A041 /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B041 /* PlayerViewModel.swift */; };
 		A042 /* PlexServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B042 /* PlexServer.swift */; };
-		A043 /* LibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B043 /* LibraryViewModel.swift */; };
-		A044 /* LibraryFilterBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B044 /* LibraryFilterBarView.swift */; };
-		A045 /* CollectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B045 /* CollectionsView.swift */; };
+	A043 /* LibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B043 /* LibraryViewModel.swift */; };
+	A044 /* LibraryFilterBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B044 /* LibraryFilterBarView.swift */; };
+	A045 /* CollectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B045 /* CollectionsView.swift */; };
+	A046 /* WatchlistController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B046 /* WatchlistController.swift */; };
+	A047 /* MyListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B047 /* MyListViewModel.swift */; };
+	A048 /* MyListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B048 /* MyListView.swift */; };
+	A049 /* WatchlistButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B049 /* WatchlistButton.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -67,7 +70,6 @@
 		B010 /* PlexAuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexAuthViewModel.swift; sourceTree = "<group>"; };
 		B011 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		B012 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
-		B013 /* MyListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyListView.swift; sourceTree = "<group>"; };
 		B014 /* NewPopularView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPopularView.swift; sourceTree = "<group>"; };
 		B015 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B016 /* UserDefaults+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDefaults+Extensions.swift"; sourceTree = "<group>"; };
@@ -89,10 +91,10 @@
 		B032 /* BackendConfigViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendConfigViewModel.swift; sourceTree = "<group>"; };
 		B033 /* BackendConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendConfigView.swift; sourceTree = "<group>"; };
 		B034 /* Color+Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Theme.swift"; sourceTree = "<group>"; };
-		B038 /* MediaItem+Hashable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaItem+Hashable.swift"; sourceTree = "<group>"; };
 		B035 /* DetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsView.swift; sourceTree = "<group>"; };
 		B036 /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
 		B037 /* DetailsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsViewModel.swift; sourceTree = "<group>"; };
+		B038 /* MediaItem+Hashable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaItem+Hashable.swift"; sourceTree = "<group>"; };
 		B039 /* DetailsTabsBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsTabsBar.swift; sourceTree = "<group>"; };
 		B040 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
 		B041 /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
@@ -100,6 +102,10 @@
 		B043 /* LibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModel.swift; sourceTree = "<group>"; };
 		B044 /* LibraryFilterBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilterBarView.swift; sourceTree = "<group>"; };
 		B045 /* CollectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionsView.swift; sourceTree = "<group>"; };
+		B046 /* WatchlistController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistController.swift; sourceTree = "<group>"; };
+		B047 /* MyListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyListViewModel.swift; sourceTree = "<group>"; };
+		B048 /* MyListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyListView.swift; sourceTree = "<group>"; };
+		B049 /* WatchlistButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistButton.swift; sourceTree = "<group>"; };
 		B999 /* FlixorMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlixorMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -163,6 +169,7 @@
 				D011 /* Components */,
 				D012 /* Home */,
 				D013 /* Library */,
+				D020 /* MyList */,
 				D014 /* Search */,
 				D015 /* Settings */,
 				D018 /* Details */,
@@ -181,6 +188,8 @@
 				B040 /* SearchViewModel.swift */,
 				B041 /* PlayerViewModel.swift */,
 				B043 /* LibraryViewModel.swift */,
+				B047 /* MyListViewModel.swift */,
+				B046 /* WatchlistController.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -217,7 +226,6 @@
 			isa = PBXGroup;
 			children = (
 				B003 /* SidebarView.swift */,
-				B013 /* MyListView.swift */,
 				B014 /* NewPopularView.swift */,
 				B017 /* CachedAsyncImage.swift */,
 				B019 /* PosterCard.swift */,
@@ -230,6 +238,7 @@
 				B026 /* TopNavBar.swift */,
 				B027 /* ToastView.swift */,
 				B044 /* LibraryFilterBarView.swift */,
+				B049 /* WatchlistButton.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -267,6 +276,24 @@
 			path = Settings;
 			sourceTree = "<group>";
 		};
+		D016 /* API */ = {
+			isa = PBXGroup;
+			children = (
+				B006 /* APIClient.swift */,
+				B018 /* ImageService.swift */,
+			);
+			path = API;
+			sourceTree = "<group>";
+		};
+		D017 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				B007 /* KeychainHelper.swift */,
+				B008 /* SessionManager.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
 		D018 /* Details */ = {
 			isa = PBXGroup;
 			children = (
@@ -284,22 +311,12 @@
 			path = Player;
 			sourceTree = "<group>";
 		};
-		D016 /* API */ = {
+		D020 /* MyList */ = {
 			isa = PBXGroup;
 			children = (
-				B006 /* APIClient.swift */,
-				B018 /* ImageService.swift */,
+				B048 /* MyListView.swift */,
 			);
-			path = API;
-			sourceTree = "<group>";
-		};
-		D017 /* Auth */ = {
-			isa = PBXGroup;
-			children = (
-				B007 /* KeychainHelper.swift */,
-				B008 /* SessionManager.swift */,
-			);
-			path = Auth;
+			path = MyList;
 			sourceTree = "<group>";
 		};
 		D099 /* Products */ = {
@@ -391,7 +408,6 @@
 				A010 /* PlexAuthViewModel.swift in Sources */,
 				A011 /* SearchView.swift in Sources */,
 				A012 /* LibraryView.swift in Sources */,
-				A013 /* MyListView.swift in Sources */,
 				A014 /* NewPopularView.swift in Sources */,
 				A015 /* SettingsView.swift in Sources */,
 				A016 /* UserDefaults+Extensions.swift in Sources */,
@@ -423,6 +439,10 @@
 				A043 /* LibraryViewModel.swift in Sources */,
 				A044 /* LibraryFilterBarView.swift in Sources */,
 				A045 /* CollectionsView.swift in Sources */,
+				A046 /* WatchlistController.swift in Sources */,
+				A047 /* MyListViewModel.swift in Sources */,
+				A048 /* MyListView.swift in Sources */,
+				A049 /* WatchlistButton.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

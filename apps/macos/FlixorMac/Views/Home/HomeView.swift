@@ -55,7 +55,9 @@ struct HomeView: View {
                             } else {
                                 // Continue Watching (second in order per web)
                                 if !viewModel.continueWatchingItems.isEmpty {
-                                    ContinueWatchingSection(viewModel: viewModel)
+                                    ContinueWatchingSection(viewModel: viewModel, onTap: { item in
+                                        viewModel.showItemDetails(item)
+                                    })
                                 }
 
                                 // Extra sections (Popular on Plex, Trending Now, Watchlist, Genres, Trakt)
@@ -167,6 +169,7 @@ struct HeroSkeleton: View {
 
 struct ContinueWatchingSection: View {
     @ObservedObject var viewModel: HomeViewModel
+    var onTap: (MediaItem) -> Void
 
     var body: some View {
         CarouselRow(
@@ -178,7 +181,7 @@ struct ContinueWatchingSection: View {
             rowHeight: (420 * 0.5) + 80
         ) { item in
             ContinueCard(item: item, width: 420) {
-                viewModel.playItem(item)
+                onTap(item)
             }
         }
     }

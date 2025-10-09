@@ -51,10 +51,12 @@ class DetailsViewModel: ObservableObject {
     @Published var extras: [Extra] = []
     // Versions / tracks
     @Published var versions: [VersionDetail] = []
-   @Published var activeVersionId: String?
-   @Published var audioTracks: [Track] = []
-   @Published var subtitleTracks: [Track] = []
+    @Published var activeVersionId: String?
+    @Published var audioTracks: [Track] = []
+    @Published var subtitleTracks: [Track] = []
     @Published var externalRatings: ExternalRatings?
+    @Published var plexRatingKey: String?
+    @Published var plexGuid: String?
 
     // Context
     @Published var tmdbId: String?
@@ -147,6 +149,8 @@ class DetailsViewModel: ObservableObject {
         activeVersionId = nil
         audioTracks = []
         subtitleTracks = []
+        plexRatingKey = nil
+        plexGuid = nil
 
         print("🎬 [Details] Loading details for item: \(item.id), title: \(item.title)")
 
@@ -165,6 +169,7 @@ class DetailsViewModel: ObservableObject {
             } else if item.id.hasPrefix("plex:") {
                 print("📀 [Details] Loading native Plex item (prefixed)")
                 let rk = String(item.id.dropFirst(5))
+                plexRatingKey = rk
                 do {
                     print("📦 [Details] Fetching Plex metadata for ratingKey: \(rk)")
                     let meta: PlexMeta = try await api.get("/api/plex/metadata/\(rk)")
@@ -210,6 +215,7 @@ class DetailsViewModel: ObservableObject {
                     if let tm = meta.Guid?.compactMap({ $0.id }).first(where: { s in s.contains("tmdb://") || s.contains("themoviedb://") }),
                        let tid = tm.components(separatedBy: "://").last {
                         tmdbId = tid
+                        plexGuid = tm
                         print("📺 [Details] Found TMDB GUID: \(tid), fetching enhancements (skip Plex mapping)")
                         try await fetchTMDBDetails(media: mediaKind ?? "movie", id: tid, skipPlexMapping: true)
                     }
@@ -547,6 +553,10 @@ class DetailsViewModel: ObservableObject {
         // Update VM with Plex mapping
         let rk = match.ratingKey
         self.playableId = "plex:\(rk)"
+        self.plexRatingKey = rk
+        if let firstGuid = match.Guid?.compactMap({ $0.id }).first {
+            self.plexGuid = firstGuid
+        }
         print("✨ [mapToPlex] Setting playableId to: \(self.playableId ?? "nil")")
         self.addBadge("Plex")
         // Prefer Plex backdrop

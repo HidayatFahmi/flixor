@@ -33,11 +33,14 @@ class PlayerViewModel: ObservableObject {
     private(set) var player: AVPlayer?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
+    private var kvoCancellables = Set<AnyCancellable>()
     private let api = APIClient.shared
 
     // Progress tracking
     private var progressTimer: Timer?
     private var lastReportedProgress: TimeInterval = 0
+    private var initialSeekApplied = false
+    private var serverResumeSeconds: TimeInterval?
 
     // Session tracking for cleanup
     private var sessionId: String?
@@ -67,7 +70,24 @@ class PlayerViewModel: ObservableObject {
 
     private func setupPlayer() {
         Task {
+            await fetchServerResumeOffset()
             await loadStreamURL()
+        }
+    }
+
+    private func fetchServerResumeOffset() async {
+        // Try to get latest playstate from backend metadata if not included
+        let rk = item.id.replacingOccurrences(of: "plex:", with: "")
+        guard !rk.isEmpty else { return }
+        do {
+            struct Meta: Decodable { let viewOffset: Int? }
+            let meta: Meta = try await api.get("/api/plex/metadata/\(rk)")
+            if let ms = meta.viewOffset, ms > 2000 {
+                serverResumeSeconds = TimeInterval(ms) / 1000.0
+                print("🕑 [Player] Server resume offset: \(ms) ms")
+            }
+        } catch {
+            print("⚠️ [Player] Failed to fetch server resume offset: \(error)")
         }
     }
 
@@ -182,7 +202,11 @@ class PlayerViewModel: ObservableObject {
             guard let finalURL = self.streamURL else {
                 throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Stream URL not set"])
             }
-            let playerItem = AVPlayerItem(url: finalURL)
+            let asset = AVURLAsset(url: finalURL)
+            let playerItem = AVPlayerItem(asset: asset)
+            // Buffering preferences for smoother playback
+            playerItem.preferredForwardBufferDuration = 20 // seconds to buffer ahead
+            playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
 
             // Add error observer
             playerItem.publisher(for: \.error)
@@ -198,15 +222,16 @@ class PlayerViewModel: ObservableObject {
                 .store(in: &cancellables)
 
             self.player = AVPlayer(playerItem: playerItem)
+            self.player?.automaticallyWaitsToMinimizeStalling = true
 
             // Setup observers
             setupTimeObserver()
             setupPlayerObservers(playerItem: playerItem)
+            setupPlayerStateObservers()
 
-            // Auto-play
+            // Auto-play. Actual isLoading will be driven by timeControlStatus
             self.player?.play()
             self.isPlaying = true
-            self.isLoading = false
 
             // Start progress tracking
             startProgressTracking()
@@ -247,6 +272,8 @@ class PlayerViewModel: ObservableObject {
                     case .readyToPlay:
                         print("✅ [Player] Ready to play")
                         self.isLoading = false
+                        // Apply initial resume seek once when ready
+                        self.applyInitialSeekIfNeeded()
                     case .failed:
                         print("❌ [Player] Failed: \(playerItem.error?.localizedDescription ?? "Unknown error")")
                         self.error = playerItem.error?.localizedDescription ?? "Playback failed"
@@ -281,6 +308,62 @@ class PlayerViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        // Observe buffering-related properties to toggle spinner reliably
+        playerItem.publisher(for: \.isPlaybackLikelyToKeepUp)
+            .sink { [weak self] keepUp in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if keepUp {
+                        self.isLoading = false
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
+        playerItem.publisher(for: \.isPlaybackBufferEmpty)
+            .sink { [weak self] empty in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    if empty {
+                        self.isLoading = true
+                    }
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func setupPlayerStateObservers() {
+        guard let player = player else { return }
+        // Track timeControlStatus to reflect buffering/playing state
+        player.publisher(for: \.timeControlStatus)
+            .sink { [weak self] status in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    switch status {
+                    case .waitingToPlayAtSpecifiedRate:
+                        self.isLoading = true
+                    case .playing, .paused:
+                        self.isLoading = false
+                    @unknown default:
+                        break
+                    }
+                }
+            }
+            .store(in: &kvoCancellables)
+    }
+
+    private func applyInitialSeekIfNeeded() {
+        guard !initialSeekApplied else { return }
+        let ms = item.viewOffset ?? 0
+        var seconds = TimeInterval(ms) / 1000.0
+        if (seconds <= 2), let s = serverResumeSeconds { seconds = s }
+        guard seconds > 2 else { // ignore trivial offsets
+            initialSeekApplied = true
+            return
+        }
+        initialSeekApplied = true
+        seek(to: seconds)
     }
 
     // MARK: - Playback Controls
@@ -387,6 +470,28 @@ class PlayerViewModel: ObservableObject {
         }
     }
 
+    private func reportStopped() async {
+        guard duration > 0 else { return }
+        do {
+            let ratingKey = item.id.replacingOccurrences(of: "plex:", with: "")
+            struct ProgressRequest: Encodable {
+                let ratingKey: String
+                let time: Int
+                let duration: Int
+                let state: String
+            }
+            let request = ProgressRequest(
+                ratingKey: ratingKey,
+                time: Int(currentTime * 1000),
+                duration: Int(duration * 1000),
+                state: "stopped"
+            )
+            let _: EmptyResponse = try await api.post("/api/plex/progress", body: request)
+        } catch {
+            print("⚠️ [Player] Failed to report stopped: \(error)")
+        }
+    }
+
     private func handlePlaybackEnd() {
         isPlaying = false
         stopProgressTracking()
@@ -430,7 +535,8 @@ class PlayerViewModel: ObservableObject {
     func onDisappear() {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            await self.reportProgress() // Final progress report
+            await self.reportProgress() // Final progress snapshot
+            await self.reportStopped()  // Explicit stopped state like web
 
             // Stop the transcode session
             await self.stopTranscodeSession()

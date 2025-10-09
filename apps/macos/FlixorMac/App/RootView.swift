@@ -7,9 +7,15 @@
 
 import SwiftUI
 
+// Simple navigation router to manage NavigationPath
+final class NavigationRouter: ObservableObject {
+    @Published var path = NavigationPath()
+}
+
 struct RootView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @AppStorage("backendConfigured") private var isBackendConfigured = false
+    @StateObject private var watchlistController = WatchlistController()
 
     var body: some View {
         Group {
@@ -28,17 +34,28 @@ struct RootView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: sessionManager.isAuthenticated)
         .animation(.easeInOut(duration: 0.3), value: isBackendConfigured)
+        .environmentObject(watchlistController)
     }
 }
 
 struct MainView: View {
     @State private var selectedTab: NavItem = .home
     @EnvironmentObject var sessionManager: SessionManager
+    @StateObject private var router = NavigationRouter()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $router.path) {
             destinationView(for: selectedTab)
+                // Centralize PlayerView presentation here to avoid inheriting padding
+                .navigationDestination(for: MediaItem.self) { item in
+                    PlayerView(item: item)
+                        .toolbar(.hidden, for: .windowToolbar)
+                        .ignoresSafeArea(.all, edges: .all)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
         }
+        .id(selectedTab) // Recreate entire NavigationStack when tab changes
+        .environmentObject(router)
         .toolbar {
             // Logo on left
             ToolbarItem(placement: .navigation) {

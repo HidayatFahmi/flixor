@@ -13,10 +13,18 @@ struct ContinueCard: View {
     var onTap: (() -> Void)?
 
     @State private var isHovered = false
-    @State private var altURL: URL? = nil
 
     private var height: CGFloat {
         width * 0.5 // 2:1 aspect ratio (like web app)
+    }
+
+    private var imageURL: URL? {
+        // Use TMDB backdrop if available (pre-fetched by HomeViewModel)
+        if let art = item.art, let url = URL(string: art) {
+            return url
+        }
+        // Fallback to Plex image
+        return ImageService.shared.continueWatchingURL(for: item, width: Int(width * 2), height: Int(height * 2))
     }
 
     private var progressPercentage: Double {
@@ -54,13 +62,11 @@ struct ContinueCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Backdrop with play button
                 ZStack {
-                    CachedAsyncImage(
-                        url: altURL ?? ImageService.shared.continueWatchingURL(for: item, width: Int(width * 2), height: Int(height * 2))
-                    )
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: width, height: height)
-                    .clipped()
-                    .background(Color.gray.opacity(0.2))
+                    CachedAsyncImage(url: imageURL)
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: width, height: height)
+                        .clipped()
+                        .background(Color.gray.opacity(0.2))
 
                     // Dark gradient overlay
                     LinearGradient(
@@ -68,19 +74,6 @@ struct ContinueCard: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-
-                    // Play button
-                    Circle()
-                        .fill(Color.white.opacity(isHovered ? 0.9 : 0.7))
-                        .frame(width: 60, height: 60)
-                        .overlay(
-                            Image(systemName: "play.fill")
-                                .font(.title)
-                                .foregroundStyle(.black)
-                                .offset(x: 3)
-                        )
-                        .scaleEffect(isHovered ? 1.1 : 1.0)
-                        .shadow(color: .black.opacity(0.5), radius: 10)
                 }
                 .cornerRadius(14)
                 .overlay(
@@ -118,7 +111,7 @@ struct ContinueCard: View {
                 }
                 .padding(.top, 8)
             }
-        }
+        }.padding(.vertical, 10)
         .buttonStyle(.plain)
         .frame(width: width)
         .scaleEffect(isHovered ? 1.03 : 1.0)
@@ -126,63 +119,6 @@ struct ContinueCard: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        .task(id: item.id) {
-            await fetchTMDBBackdrop()
-        }
-    }
-
-    // MARK: - TMDB Backdrop Upgrade (original size via proxy)
-    private func fetchTMDBBackdrop() async {
-        if let url = try? await resolveTMDBBackdropURL(for: item, width: Int(width * 2), height: Int(height * 2)) {
-            await MainActor.run { self.altURL = url }
-        }
-    }
-
-    private func resolveTMDBBackdropURL(for item: MediaItem, width: Int, height: Int) async throws -> URL? {
-        let api = APIClient.shared
-        if item.id.hasPrefix("tmdb:") {
-            let parts = item.id.split(separator: ":")
-            if parts.count == 3 {
-                let media = (parts[1] == "movie") ? "movie" : "tv"
-                let id = String(parts[2])
-                if let url = try await fetchTMDBBestBackdropURL(mediaType: media, id: id, width: width, height: height) {
-                    return url
-                }
-            }
-            return nil
-        }
-        if item.id.hasPrefix("plex:") {
-            let rk = String(item.id.dropFirst(5))
-            struct PlexMeta: Codable { let type: String?; let Guid: [PlexGuid]? }
-            struct PlexGuid: Codable { let id: String? }
-            let meta: PlexMeta = try await api.get("/api/plex/metadata/\(rk)")
-            let mediaType = (meta.type == "movie") ? "movie" : "tv"
-            if let guid = meta.Guid?.compactMap({ $0.id }).first(where: { $0.contains("tmdb://") || $0.contains("themoviedb://") }),
-               let tid = guid.components(separatedBy: "://").last {
-                if let url = try await fetchTMDBBestBackdropURL(mediaType: mediaType, id: tid, width: width, height: height) {
-                    return url
-                }
-            }
-        }
-        return nil
-    }
-
-    private func fetchTMDBBestBackdropURL(mediaType: String, id: String, width: Int, height: Int) async throws -> URL? {
-        struct TMDBImages: Codable { let backdrops: [TMDBImage]? }
-        struct TMDBImage: Codable { let file_path: String?; let iso_639_1: String?; let vote_average: Double? }
-        let imgs: TMDBImages = try await APIClient.shared.get("/api/tmdb/\(mediaType)/\(id)/images", queryItems: [URLQueryItem(name: "language", value: "en,hi,null")])
-        let backs = imgs.backdrops ?? []
-        if backs.isEmpty { return nil }
-        let pick: ([TMDBImage]) -> TMDBImage? = { arr in
-            return arr.sorted { ($0.vote_average ?? 0) > ($1.vote_average ?? 0) }.first
-        }
-        let en = pick(backs.filter { $0.iso_639_1 == "en" || $0.iso_639_1 == "hi"})
-        let nul = pick(backs.filter { $0.iso_639_1 == nil })
-        let any = pick(backs)
-        let sel = en ?? nul ?? any
-        guard let path = sel?.file_path else { return nil }
-        let full = "https://image.tmdb.org/t/p/original\(path)"
-        return ImageService.shared.proxyImageURL(url: full, width: width, height: height)
     }
 }
 

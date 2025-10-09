@@ -63,6 +63,10 @@ extension MediaItem {
 
 // Complete MediaItem structure with all fields
 struct MediaItemFull: Identifiable, Codable {
+    struct GuidEntry: Codable {
+        let id: String
+    }
+
     let id: String // ratingKey
     let title: String
     let type: String
@@ -78,6 +82,7 @@ struct MediaItemFull: Identifiable, Codable {
     let grandparentTitle: String?
     let grandparentThumb: String?
     let grandparentArt: String?
+    let grandparentRatingKey: String?
     let parentIndex: Int?
     let index: Int?
 
@@ -90,6 +95,7 @@ struct MediaItemFull: Identifiable, Codable {
     let tagline: String?
     let key: String?
     let guid: String?
+    let Guid: [GuidEntry]?
     let slug: String?
 
     // Library metadata
@@ -112,6 +118,7 @@ struct MediaItemFull: Identifiable, Codable {
         case grandparentTitle
         case grandparentThumb
         case grandparentArt
+        case grandparentRatingKey
         case parentIndex
         case index
         case addedAt
@@ -122,6 +129,7 @@ struct MediaItemFull: Identifiable, Codable {
         case tagline
         case key
         case guid
+        case Guid
         case slug
         case allowSync
         case librarySectionID
