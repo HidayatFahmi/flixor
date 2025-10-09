@@ -52,7 +52,12 @@ class MPVNSView: NSView {
         autoresizingMask = [.width, .height]
         wantsBestResolutionOpenGLSurface = true
 
-        print("✅ [MPVView] Layer setup complete")
+        // CRITICAL: Enable EDR on the NSView (IINA approach)
+        if #available(macOS 10.15, *) {
+            wantsExtendedDynamicRangeOpenGLSurface = true
+        }
+
+        print("✅ [MPVView] Layer setup complete with EDR enabled on view")
     }
 
     func setupMPVRendering(controller: MPVPlayerController) {

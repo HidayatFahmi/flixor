@@ -41,6 +41,9 @@ class MPVPlayerController {
     /// Callback for events
     var onEvent: ((String) -> Void)?
 
+    /// Callback for HDR detection
+    var onHDRDetected: ((Bool, String?, String?) -> Void)?
+
     // MARK: - Initialization
 
     init() {
@@ -95,6 +98,9 @@ class MPVPlayerController {
         // Video output - use libmpv for rendering
         setOption("vo", value: "libmpv")
 
+        // Force OpenGL GPU API (align with IINA). This avoids odd render paths.
+        setOption("gpu-api", value: "opengl")
+
         // Keep aspect ratio
         setOption("keepaspect", value: "yes")
 
@@ -126,6 +132,18 @@ class MPVPlayerController {
         setOption("audio-channels", value: "stereo")
         setOption("volume-max", value: "100")
 
+        // macOS GPU acceleration
+        setOption("macos-force-dedicated-gpu", value: "yes")
+
+        // Debug logging (only in Debug builds)
+        #if DEBUG
+        setOption("msg-level", value: "all=v")
+        setOption("log-file", value: "/tmp/mpv-flixor.log")
+        #endif
+
+        // Note: HDR options (target-trc, target-prim, target-peak, tone-mapping)
+        // will be set dynamically when HDR content is detected (IINA approach)
+
         print("✅ [MPV] Options configured")
     }
 
@@ -139,6 +157,10 @@ class MPVPlayerController {
         mpv_observe_property(mpv, 0, "eof-reached", MPV_FORMAT_FLAG)
         mpv_observe_property(mpv, 0, "seeking", MPV_FORMAT_FLAG)
         mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG)
+
+        // Observe video properties for HDR detection (IINA approach)
+        mpv_observe_property(mpv, 0, "video-params/primaries", MPV_FORMAT_STRING)
+        mpv_observe_property(mpv, 0, "video-params/gamma", MPV_FORMAT_STRING)
     }
 
     // MARK: - Rendering Setup
@@ -283,6 +305,24 @@ class MPVPlayerController {
         return mpvRenderContext
     }
 
+    // Provide ICC profile to mpv render context (like IINA's MPV_RENDER_PARAM_ICC_PROFILE path).
+    func setRenderICCProfile(_ colorSpace: NSColorSpace) {
+        guard let renderContext = mpvRenderContext else { return }
+        guard var iccData = colorSpace.iccProfileData else {
+            let name = colorSpace.localizedName ?? "unnamed"
+            print("⚠️ [MPV] Color space \(name) has no ICC data")
+            return
+        }
+        iccData.withUnsafeMutableBytes { ptr in
+            guard let base = ptr.baseAddress, ptr.count > 0 else { return }
+            var byteArray = mpv_byte_array(data: base.assumingMemoryBound(to: UInt8.self), size: ptr.count)
+            withUnsafeMutableBytes(of: &byteArray) { bptr in
+                let param = mpv_render_param(type: MPV_RENDER_PARAM_ICC_PROFILE, data: bptr.baseAddress)
+                mpv_render_context_set_parameter(renderContext, param)
+            }
+        }
+    }
+
     // MARK: - Property Management
 
     func getProperty<T>(_ name: String, type: PropertyType) -> T? {
@@ -329,11 +369,65 @@ class MPVPlayerController {
         }
     }
 
+    /// Set HDR properties dynamically (IINA approach)
+    func setHDRProperties(primaries: String) {
+        guard mpv != nil else { return }
+
+        // Disable ICC profile for HDR
+        setProperty("icc-profile-auto", value: false)
+
+        // Set target color space to PQ (HDR)
+        // PQ videos will be displayed as-is, HLG videos will be converted to PQ
+        setProperty("target-trc", value: "pq")
+        setProperty("target-prim", value: primaries)
+
+        // CRITICAL: IINA's default is enableToneMapping=false
+        // This lets the display handle HDR natively via macOS EDR
+        // Disable tone mapping for native HDR display (IINA default)
+        setProperty("target-peak", value: "auto")
+        setProperty("tone-mapping", value: "")
+
+        // Tag screenshots with colorspace
+        setProperty("screenshot-tag-colorspace", value: true)
+
+        print("✅ [MPV] HDR properties set: target-trc=pq, target-prim=\(primaries), target-peak=auto, tone-mapping=disabled (native EDR)")
+    }
+
+    /// Set SDR properties dynamically (IINA approach)
+    func setSDRProperties() {
+        guard mpv != nil else { return }
+        // Enable ICC auto so mpv uses the provided ICC profile via render param
+        setOption("icc-profile-auto", value: "yes")
+        setProperty("target-trc", value: "auto")
+        setProperty("target-prim", value: "auto")
+        setProperty("target-peak", value: "auto")
+        setProperty("tone-mapping", value: "auto")
+        setProperty("screenshot-tag-colorspace", value: false)
+
+        print("✅ [MPV] SDR properties set")
+    }
+
     private func setOption(_ name: String, value: String) {
         guard mpv != nil else { return }
         let status = mpv_set_option_string(mpv, name, value)
         if status < 0 {
             print("⚠️ [MPV] Failed to set option \(name)=\(value): \(String(cString: mpv_error_string(status)))")
+        }
+    }
+
+    // MARK: - Color Management
+
+    /// Set ICC profile path for the current renderer and disable auto detection, like IINA.
+    /// Pass empty string to clear.
+    func setICCProfile(path: String?) {
+        guard mpv != nil else { return }
+        let profilePath = path ?? ""
+        _ = mpv_set_option_string(mpv, "icc-profile", profilePath)
+        _ = mpv_set_option_string(mpv, "icc-profile-auto", "no")
+        if profilePath.isEmpty {
+            print("🎨 [MPV] ICC profile cleared; auto=no")
+        } else {
+            print("🎨 [MPV] ICC profile set: \(profilePath); auto=no")
         }
     }
 
@@ -405,6 +499,11 @@ class MPVPlayerController {
                 }
             }()
 
+            // Check for HDR detection (IINA approach)
+            if propertyName == "video-params/primaries" || propertyName == "video-params/gamma" {
+                self.detectHDR()
+            }
+
             DispatchQueue.main.async { [weak self] in
                 self?.onPropertyChange?(propertyName, value)
             }
@@ -454,6 +553,28 @@ class MPVPlayerController {
 
         default:
             break
+        }
+    }
+
+    // MARK: - HDR Detection
+
+    private func detectHDR() {
+        // Get video properties (IINA approach)
+        guard let gamma: String = getProperty("video-params/gamma", type: .string),
+              let primaries: String = getProperty("video-params/primaries", type: .string) else {
+            return
+        }
+
+        // HDR videos use PQ (Perceptual Quantizer) or HLG (Hybrid Log-Gamma) transfer functions
+        let isHDR = gamma == "pq" || gamma == "hlg"
+
+        if isHDR {
+            print("🌈 [MPV] HDR detected! Gamma: \(gamma), Primaries: \(primaries)")
+        }
+
+        // Notify via callback
+        DispatchQueue.main.async { [weak self] in
+            self?.onHDRDetected?(isHDR, gamma, primaries)
         }
     }
 
