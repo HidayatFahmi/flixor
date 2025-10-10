@@ -29,6 +29,12 @@ class PlayerViewModel: ObservableObject {
     @Published var availableQualities: [String] = []
     @Published var selectedQuality: String = "Original"
 
+    // MPV Track info (audio/subtitle)
+    @Published var availableAudioTracks: [MPVTrack] = []
+    @Published var availableSubtitleTracks: [MPVTrack] = []
+    @Published var currentAudioTrackId: Int? = nil
+    @Published var currentSubtitleTrackId: Int? = nil
+
     // Markers (intro/credits) - no high-frequency updates
     @Published var markers: [PlayerMarker] = []
     @Published var currentMarker: PlayerMarker? = nil
@@ -42,6 +48,7 @@ class PlayerViewModel: ObservableObject {
     let item: MediaItem
     private(set) var player: AVPlayer?
     @Published var mpvController: MPVPlayerController?
+    @Published var thumbnailGenerator: MPVThumbnailGenerator?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     private var kvoCancellables = Set<AnyCancellable>()
@@ -57,6 +64,9 @@ class PlayerViewModel: ObservableObject {
     private var lastReportedProgress: TimeInterval = 0
     private var initialSeekApplied = false
     private var serverResumeSeconds: TimeInterval?
+
+    // MPV error detection
+    private var fileStartTime: Date?
 
     // Countdown timer for next episode
     private var countdownTimer: Timer?
@@ -127,6 +137,8 @@ class PlayerViewModel: ObservableObject {
                 case "duration":
                     if let dur = value as? Double {
                         self.duration = dur
+                        // Apply initial seek after duration is available (for MPV)
+                        self.applyInitialSeekIfNeeded()
                     }
                 case "pause":
                     if let paused = value as? Bool {
@@ -154,15 +166,34 @@ class PlayerViewModel: ObservableObject {
                 switch event {
                 case "file-started":
                     print("📺 [Player] MPV file started")
+                    self.fileStartTime = Date()
                 case "file-loaded":
                     print("✅ [Player] MPV file loaded")
                     self.isLoading = false
                     self.applyInitialSeekIfNeeded()
+                    // Load available tracks
+                    self.loadTracks()
+                    // Notify thumbnail generator
+                    if let path: String = self.mpvController?.getProperty("path", type: .string) {
+                        self.thumbnailGenerator?.onVideoLoaded(url: path)
+                    }
                 case "playback-restart":
                     print("▶️ [Player] MPV playback started")
                     self.isPlaying = true
                     self.isLoading = false
                 case "file-ended":
+                    // Check if file-ended happened too quickly after file-started (< 3 seconds)
+                    // This indicates a loading error, not actual playback completion
+                    if let startTime = self.fileStartTime {
+                        let timeSinceStart = Date().timeIntervalSince(startTime)
+                        if timeSinceStart < 3.0 {
+                            print("❌ [Player] MPV playback failed (file-ended after \(String(format: "%.1f", timeSinceStart))s) - likely connection error")
+                            self.error = "Failed to load video. Please check your network connection and try again."
+                            self.isLoading = false
+                            self.isPlaying = false
+                            return
+                        }
+                    }
                     print("✅ [Player] MPV playback finished")
                     self.handlePlaybackEnd()
                 default:
@@ -173,7 +204,12 @@ class PlayerViewModel: ObservableObject {
         }
 
         self.mpvController = controller
-        print("✅ [Player] MPV controller initialized")
+
+        // Initialize thumbnail generator
+        let generator = MPVThumbnailGenerator(mpvController: controller)
+        self.thumbnailGenerator = generator
+
+        print("✅ [Player] MPV controller initialized with thumbnail support")
     }
 
     private func fetchServerResumeOffset() async {
@@ -749,28 +785,41 @@ class PlayerViewModel: ObservableObject {
 
     private func applyInitialSeekIfNeeded() {
         guard !initialSeekApplied else { return }
+        guard duration > 0 else {
+            // Duration not available yet, will be called again when duration is set
+            return
+        }
+
         initialSeekApplied = true
 
         let ms = item.viewOffset ?? 0
         var seconds = TimeInterval(ms) / 1000.0
         if (seconds <= 2), let s = serverResumeSeconds { seconds = s }
 
-        // If content is almost finished (within last 30s or >98% watched), restart from beginning
-        if duration > 0 {
+        // If viewOffset is at or past the duration, definitely restart from beginning
+        if seconds >= duration {
+            print("🔄 [Player] Content fully watched (offset=\(Int(seconds))s >= duration=\(Int(duration))s) - restarting from beginning")
+            seconds = 0
+        }
+        // If content is almost finished (within last 30s or >95% watched), restart from beginning
+        else if duration > 0 {
             let progress = seconds / duration
             let secondsRemaining = duration - seconds
-            if progress > 0.98 || secondsRemaining < 30 {
+            if progress > 0.95 || secondsRemaining < 30 {
                 print("🔄 [Player] Content almost finished (progress: \(Int(progress * 100))%, \(Int(secondsRemaining))s remaining) - restarting from beginning")
                 seconds = 0
             }
         }
 
-        guard seconds > 2 else { // ignore trivial offsets
-            return
+        // Only seek if we have a meaningful offset
+        if seconds > 2 {
+            seek(to: seconds)
+            print("⏩ [Player] Resuming playback at \(Int(seconds))s")
+        } else if seconds == 0 && (item.viewOffset ?? 0) > 0 {
+            // Explicitly seeking to 0 after restarting fully watched content
+            seek(to: 0)
+            print("▶️ [Player] Starting from beginning")
         }
-
-        seek(to: seconds)
-        print("⏩ [Player] Resuming playback at \(Int(seconds))s")
     }
 
     // MARK: - Playback Controls
@@ -872,6 +921,57 @@ class PlayerViewModel: ObservableObject {
                 seek(to: savedTime)
             }
         }
+    }
+
+    // MARK: - Track Management (MPV only)
+
+    /// Load available audio and subtitle tracks (MPV only)
+    func loadTracks() {
+        guard playerBackend == .mpv,
+              let mpv = mpvController else {
+            return
+        }
+
+        availableAudioTracks = mpv.getAudioTracks()
+        availableSubtitleTracks = mpv.getSubtitleTracks()
+        currentAudioTrackId = mpv.getCurrentAudioTrack()
+        currentSubtitleTrackId = mpv.getCurrentSubtitleTrack()
+
+        print("🎵 [Player] Loaded \(availableAudioTracks.count) audio tracks")
+        print("💬 [Player] Loaded \(availableSubtitleTracks.count) subtitle tracks")
+    }
+
+    /// Set audio track (MPV only)
+    func setAudioTrack(_ trackId: Int) {
+        guard playerBackend == .mpv,
+              let mpv = mpvController else {
+            return
+        }
+
+        mpv.setAudioTrack(trackId)
+        currentAudioTrackId = trackId
+    }
+
+    /// Set subtitle track (MPV only)
+    func setSubtitleTrack(_ trackId: Int) {
+        guard playerBackend == .mpv,
+              let mpv = mpvController else {
+            return
+        }
+
+        mpv.setSubtitleTrack(trackId)
+        currentSubtitleTrackId = trackId
+    }
+
+    /// Disable subtitles (MPV only)
+    func disableSubtitles() {
+        guard playerBackend == .mpv,
+              let mpv = mpvController else {
+            return
+        }
+
+        mpv.disableSubtitles()
+        currentSubtitleTrackId = nil
     }
 
     // MARK: - Progress Tracking
@@ -1068,6 +1168,19 @@ class PlayerViewModel: ObservableObject {
 
     func cancelCountdown() {
         nextEpisodeCountdown = nil
+    }
+
+    // MARK: - Retry
+
+    func retry() {
+        print("🔄 [Player] Retrying playback")
+        error = nil
+        isLoading = true
+        initialSeekApplied = false
+
+        Task {
+            await loadStreamURL()
+        }
     }
 }
 

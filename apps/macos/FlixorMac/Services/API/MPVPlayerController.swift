@@ -44,6 +44,12 @@ class MPVPlayerController {
     /// Callback for HDR detection
     var onHDRDetected: ((Bool, String?, String?) -> Void)?
 
+    /// Callback for thumbnail info updates
+    var onThumbnailInfo: ((ThumbnailInfo) -> Void)?
+
+    /// Current thumbnail information
+    private(set) var thumbnailInfo: ThumbnailInfo?
+
     // MARK: - Initialization
 
     init() {
@@ -68,7 +74,7 @@ class MPVPlayerController {
             return
         }
 
-        // Configure mpv options
+        // Configure mpv options (including thumbfast script)
         configureOptions()
 
         // Set log level
@@ -81,7 +87,7 @@ class MPVPlayerController {
             controller.readEvents()
         }, Unmanaged.passUnretained(self).toOpaque())
 
-        // Observe important properties
+        // Observe important properties (including thumbfast-info)
         observeProperties()
 
         // Initialize mpv
@@ -141,6 +147,15 @@ class MPVPlayerController {
         setOption("log-file", value: "/tmp/mpv-flixor.log")
         #endif
 
+        // Load thumbfast.lua script for thumbnails
+        if let scriptPath = Bundle.main.path(forResource: "thumbfast", ofType: "lua") {
+            print("📸 [MPV] Loading thumbfast script: \(scriptPath)")
+            // Use "scripts" (plural) option which takes semicolon-separated list
+            setOption("scripts", value: scriptPath)
+        } else {
+            print("⚠️ [MPV] thumbfast.lua not found in bundle")
+        }
+
         // Note: HDR options (target-trc, target-prim, target-peak, tone-mapping)
         // will be set dynamically when HDR content is detected (IINA approach)
 
@@ -161,6 +176,9 @@ class MPVPlayerController {
         // Observe video properties for HDR detection (IINA approach)
         mpv_observe_property(mpv, 0, "video-params/primaries", MPV_FORMAT_STRING)
         mpv_observe_property(mpv, 0, "video-params/gamma", MPV_FORMAT_STRING)
+
+        // Observe thumbfast-info property for thumbnail metadata
+        mpv_observe_property(mpv, 0, "user-data/thumbfast-info", MPV_FORMAT_STRING)
     }
 
     // MARK: - Rendering Setup
@@ -266,6 +284,122 @@ class MPVPlayerController {
 
     func stop() {
         command(.stop)
+    }
+
+    // MARK: - Track Management
+
+    /// Get all available tracks (audio, subtitle, video)
+    func getTrackList() -> [MPVTrack] {
+        guard mpv != nil else { return [] }
+
+        var tracks: [MPVTrack] = []
+        var node = mpv_node()
+
+        let status = mpv_get_property(mpv, "track-list", MPV_FORMAT_NODE, &node)
+        guard status >= 0 else {
+            print("❌ [MPV] Failed to get track-list: \(String(cString: mpv_error_string(status)))")
+            return []
+        }
+
+        defer { mpv_free_node_contents(&node) }
+
+        guard node.format == MPV_FORMAT_NODE_ARRAY else { return [] }
+
+        let list = node.u.list.pointee
+        let count = Int(list.num)
+
+        for i in 0..<count {
+            guard let values = list.values else { continue }
+            let trackNode = values[i]
+
+            guard trackNode.format == MPV_FORMAT_NODE_MAP else { continue }
+
+            let trackMap = trackNode.u.list.pointee
+            let trackCount = Int(trackMap.num)
+
+            var track = MPVTrack()
+
+            for j in 0..<trackCount {
+                guard let keys = trackMap.keys, let values = trackMap.values else { continue }
+                let key = String(cString: keys[j]!)
+                let value = values[j]
+
+                switch key {
+                case "id":
+                    if value.format == MPV_FORMAT_INT64 {
+                        track.id = Int(value.u.int64)
+                    }
+                case "type":
+                    if value.format == MPV_FORMAT_STRING {
+                        track.type = String(cString: value.u.string!)
+                    }
+                case "src-id":
+                    if value.format == MPV_FORMAT_INT64 {
+                        track.srcId = Int(value.u.int64)
+                    }
+                case "title":
+                    if value.format == MPV_FORMAT_STRING {
+                        track.title = String(cString: value.u.string!)
+                    }
+                case "lang":
+                    if value.format == MPV_FORMAT_STRING {
+                        track.lang = String(cString: value.u.string!)
+                    }
+                case "selected":
+                    if value.format == MPV_FORMAT_FLAG {
+                        track.selected = value.u.flag != 0
+                    }
+                case "external":
+                    if value.format == MPV_FORMAT_FLAG {
+                        track.external = value.u.flag != 0
+                    }
+                default:
+                    break
+                }
+            }
+
+            tracks.append(track)
+        }
+
+        return tracks
+    }
+
+    /// Get available audio tracks
+    func getAudioTracks() -> [MPVTrack] {
+        return getTrackList().filter { $0.type == "audio" }
+    }
+
+    /// Get available subtitle tracks
+    func getSubtitleTracks() -> [MPVTrack] {
+        return getTrackList().filter { $0.type == "sub" }
+    }
+
+    /// Get current audio track ID
+    func getCurrentAudioTrack() -> Int? {
+        return getProperty("aid", type: .int64)
+    }
+
+    /// Get current subtitle track ID
+    func getCurrentSubtitleTrack() -> Int? {
+        return getProperty("sid", type: .int64)
+    }
+
+    /// Set audio track by ID
+    func setAudioTrack(_ trackId: Int) {
+        setProperty("aid", value: Int64(trackId))
+        print("🎵 [MPV] Audio track set to: \(trackId)")
+    }
+
+    /// Set subtitle track by ID (0 to disable)
+    func setSubtitleTrack(_ trackId: Int) {
+        setProperty("sid", value: Int64(trackId))
+        print("💬 [MPV] Subtitle track set to: \(trackId)")
+    }
+
+    /// Disable subtitles
+    func disableSubtitles() {
+        setProperty("sid", value: "no")
+        print("💬 [MPV] Subtitles disabled")
     }
 
     // MARK: - Rendering
@@ -508,6 +642,11 @@ class MPVPlayerController {
                 self.detectHDR()
             }
 
+            // Check for thumbfast-info updates
+            if propertyName == "user-data/thumbfast-info", let jsonString = value as? String {
+                self.parseThumbnailInfo(jsonString)
+            }
+
             DispatchQueue.main.async { [weak self] in
                 self?.onPropertyChange?(propertyName, value)
             }
@@ -660,6 +799,90 @@ class MPVPlayerController {
         openGLContext = nil
         print("✅ [MPV] Shutdown complete")
     }
+
+    // MARK: - Thumbnail Support
+
+    /// Request a thumbnail at a specific timestamp
+    /// - Parameter time: Time in seconds
+    func requestThumbnail(at time: Double) {
+        guard mpv != nil else {
+            print("❌ [MPV] Cannot request thumbnail: mpv not initialized")
+            return
+        }
+
+        // Send script-message-to thumbfast to request thumbnail
+        // Format: script-message-to thumbfast thumb <time> <x> <y> <script>
+        // We send empty strings for x/y since we're not using MPV's overlay system
+        // (we read the BGRA file directly)
+        let commandString = "script-message-to thumbfast thumb \(time) \"\" \"\""
+        print("📸 [MPV] Requesting thumbnail at \(time)s: \(commandString)")
+        let status = mpv_command_string(mpv, commandString)
+
+        if status < 0 {
+            print("❌ [MPV] Failed to request thumbnail: \(String(cString: mpv_error_string(status)))")
+        } else {
+            print("✅ [MPV] Thumbnail request sent successfully")
+        }
+    }
+
+    /// Clear the current thumbnail
+    func clearThumbnail() {
+        guard mpv != nil else { return }
+
+        let commandString = "script-message-to thumbfast clear"
+        let status = mpv_command_string(mpv, commandString)
+
+        if status < 0 {
+            print("⚠️ [MPV] Failed to clear thumbnail: \(String(cString: mpv_error_string(status)))")
+        }
+    }
+
+    /// Parse thumbfast-info JSON
+    private func parseThumbnailInfo(_ json: String) {
+        print("📸 [MPV] Received thumbfast-info JSON: \(json)")
+
+        guard let data = json.data(using: .utf8) else {
+            print("❌ [MPV] Failed to convert JSON string to data")
+            return
+        }
+
+        do {
+            let decoder = JSONDecoder()
+
+            // The property comes as a double-encoded JSON string from mp.set_property
+            // First, decode it as a JSON string to get the actual JSON
+            var actualJSON = json
+            if let decodedString = try? decoder.decode(String.self, from: data) {
+                actualJSON = decodedString
+                print("📸 [MPV] Decoded outer JSON layer, actual JSON: \(actualJSON)")
+            }
+
+            // Now decode the actual JSON as ThumbnailInfo
+            guard let actualData = actualJSON.data(using: .utf8) else {
+                print("❌ [MPV] Failed to convert actual JSON to data")
+                return
+            }
+
+            let info = try decoder.decode(ThumbnailInfo.self, from: actualData)
+            self.thumbnailInfo = info
+
+            print("📸 [MPV] Thumbnail info parsed successfully:")
+            print("   - Size: \(info.width)x\(info.height)")
+            print("   - Available: \(info.available)")
+            print("   - Disabled: \(info.disabled)")
+            print("   - Socket: \(info.socket ?? "nil")")
+            print("   - Thumbnail path: \(info.thumbnail ?? "nil")")
+            print("   - Overlay ID: \(info.overlay_id.map { String($0) } ?? "nil")")
+
+            DispatchQueue.main.async { [weak self] in
+                if let info = self?.thumbnailInfo {
+                    self?.onThumbnailInfo?(info)
+                }
+            }
+        } catch {
+            print("❌ [MPV] Failed to parse thumbfast-info: \(error)")
+        }
+    }
 }
 
 // MARK: - Supporting Types
@@ -677,4 +900,47 @@ enum PropertyType {
     case int64
     case double
     case string
+}
+
+/// Thumbnail information from thumbfast
+struct ThumbnailInfo: Codable {
+    let width: Int
+    let height: Int
+    let disabled: Bool
+    let available: Bool
+    let socket: String?
+    let thumbnail: String?
+    let overlay_id: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case width
+        case height
+        case disabled
+        case available
+        case socket
+        case thumbnail
+        case overlay_id
+    }
+}
+
+/// MPV track information (audio, subtitle, video)
+struct MPVTrack {
+    var id: Int = 0
+    var type: String = ""
+    var srcId: Int = 0
+    var title: String?
+    var lang: String?
+    var selected: Bool = false
+    var external: Bool = false
+
+    /// Display name for the track
+    var displayName: String {
+        if let title = title, !title.isEmpty {
+            return title
+        }
+        if let lang = lang, !lang.isEmpty {
+            return lang.uppercased()
+        }
+        return "Track \(id)"
+    }
 }

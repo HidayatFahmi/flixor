@@ -80,10 +80,17 @@ struct PlayerView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
 
-                    Button("Close") {
-                        dismiss()
+                    HStack(spacing: 12) {
+                        Button("Close") {
+                            dismiss()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Retry") {
+                            viewModel.retry()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
                 }
             }
 
@@ -326,6 +333,14 @@ struct PlayerControlsView: View {
     @State private var showEpisodesList = false
     @State private var showPlaybackSpeed = false
     @State private var showVolumeSlider = false
+    @State private var showAudioSubtitles = false
+
+    // Thumbnail preview states
+    @State private var showThumbnailPreview = false
+    @State private var thumbnailHoverTime: TimeInterval = 0
+    @State private var thumbnailHoverPosition: CGFloat = 0
+    @State private var thumbnailImage: NSImage? = nil
+    @State private var isThumbnailLoading = false
 
     // Hover states for all control buttons
     @State private var isBackHovered = false
@@ -337,6 +352,7 @@ struct PlayerControlsView: View {
     @State private var showNextEpisodeHover = false
     @State private var isEpisodeListHovered = false
     @State private var isSpeedHovered = false
+    @State private var isAudioSubtitlesHovered = false
     @State private var isFullscreenHovered = false
 
     var body: some View {
@@ -344,12 +360,9 @@ struct PlayerControlsView: View {
             // Top Bar
             HStack {
                 Button(action: onClose) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 20, weight: .semibold))
+                    BackArrowIcon()
+                        .frame(width: 32, height: 32)
                         .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Circle())
                         .scaleEffect(isBackHovered ? 1.1 : 1.0)
                 }
                 .buttonStyle(.plain)
@@ -417,18 +430,47 @@ struct PlayerControlsView: View {
                                 .frame(width: 12, height: 12)
                                 .offset(x: geometry.size.width * CGFloat(currentProgress) - 6)
                         }
+                        .contentShape(Rectangle())
                         .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onChanged { value in
                                     isDraggingTimeline = true
                                     let progress = min(max(0, value.location.x / geometry.size.width), 1)
                                     draggedTime = viewModel.duration * progress
+
+                                    // Update thumbnail preview during drag
+                                    thumbnailHoverTime = draggedTime
+                                    thumbnailHoverPosition = value.location.x
+                                    showThumbnailPreview = true
+                                    requestThumbnail(at: draggedTime)
                                 }
                                 .onEnded { value in
                                     isDraggingTimeline = false
                                     viewModel.seek(to: draggedTime)
+                                    showThumbnailPreview = false
                                 }
                         )
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                // Calculate time from hover position
+                                let progress = min(max(0, location.x / geometry.size.width), 1)
+                                thumbnailHoverTime = viewModel.duration * progress
+                                thumbnailHoverPosition = location.x
+
+                                // Show preview and request thumbnail
+                                if !isDraggingTimeline {
+                                    showThumbnailPreview = true
+                                    requestThumbnail(at: thumbnailHoverTime)
+                                }
+                            case .ended:
+                                // Hide preview when hover ends
+                                if !isDraggingTimeline {
+                                    showThumbnailPreview = false
+                                    thumbnailImage = nil // Clear cached image
+                                }
+                            }
+                        }
                     }
                     .frame(height: 12)
 
@@ -570,6 +612,25 @@ struct PlayerControlsView: View {
                         .help("Episodes")
                     }
 
+                    // Audio & Subtitles button (MPV only)
+                    if viewModel.mpvController != nil {
+                        Button(action: {
+                            showAudioSubtitles.toggle()
+                        }) {
+                            SubtitlesIcon()
+                                .frame(width: 32, height: 32)
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                        .scaleEffect(isAudioSubtitlesHovered ? 1.1 : 1.0)
+                        .onHover { hovering in
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isAudioSubtitlesHovered = hovering
+                            }
+                        }
+                        .help("Audio & Subtitles")
+                    }
+
                     // Playback speed button
                     Button(action: {
                         showPlaybackSpeed.toggle()
@@ -678,6 +739,30 @@ struct PlayerControlsView: View {
                 .transition(.opacity)
             }
         }
+        .overlay {
+            if showAudioSubtitles {
+                AudioSubtitlesModal(
+                    audioTracks: viewModel.availableAudioTracks,
+                    subtitleTracks: viewModel.availableSubtitleTracks,
+                    currentAudioTrackId: viewModel.currentAudioTrackId,
+                    currentSubtitleTrackId: viewModel.currentSubtitleTrackId,
+                    onSelectAudioTrack: { trackId in
+                        viewModel.setAudioTrack(trackId)
+                    },
+                    onSelectSubtitleTrack: { trackId in
+                        if trackId == 0 {
+                            viewModel.disableSubtitles()
+                        } else {
+                            viewModel.setSubtitleTrack(trackId)
+                        }
+                    },
+                    onClose: {
+                        showAudioSubtitles = false
+                    }
+                )
+                .transition(.opacity)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             // Next Episode Hover Card - positioned independently
             if showNextEpisodeHover, let nextEp = viewModel.nextEpisode {
@@ -685,6 +770,20 @@ struct PlayerControlsView: View {
                     .padding(.trailing, 120)
                     .padding(.bottom, 80)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            // Thumbnail preview - positioned completely independently
+            if showThumbnailPreview {
+                ThumbnailPreviewView(
+                    time: thumbnailHoverTime,
+                    image: thumbnailImage,
+                    isLoading: isThumbnailLoading
+                )
+                .offset(x: thumbnailHoverPosition + 20 - 100) // 20px is the horizontal padding, center 200px wide preview
+                .offset(y: -140) // Position above timeline
+                .allowsHitTesting(false)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
     }
@@ -706,6 +805,19 @@ struct PlayerControlsView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, secs)
         } else {
             return String(format: "%d:%02d", minutes, secs)
+        }
+    }
+
+    private func requestThumbnail(at time: TimeInterval) {
+        guard let generator = viewModel.thumbnailGenerator else { return }
+
+        isThumbnailLoading = true
+
+        generator.generateThumbnail(at: time) { image in
+            Task { @MainActor in
+                self.thumbnailImage = image
+                self.isThumbnailLoading = false
+            }
         }
     }
 }
@@ -760,6 +872,173 @@ struct EpisodesListPanel: View {
         .frame(width: 450)
         .background(Color.black.opacity(0.95))
         .clipShape(RoundedRectangle(cornerRadius: 0))
+    }
+}
+
+// MARK: - Audio & Subtitles Combined Modal
+
+private struct AudioSubtitlesModal: View {
+    let audioTracks: [MPVTrack]
+    let subtitleTracks: [MPVTrack]
+    let currentAudioTrackId: Int?
+    let currentSubtitleTrackId: Int?
+    let onSelectAudioTrack: (Int) -> Void
+    let onSelectSubtitleTrack: (Int) -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            // Semi-transparent background
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    onClose()
+                }
+
+            // Combined track selector card - positioned bottom-right
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+
+                    combinedTrackSelectorCard
+                }
+            }
+        }
+    }
+
+    private var combinedTrackSelectorCard: some View {
+        HStack(alignment: .top, spacing: 0) {
+            // Audio column
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Audio")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .padding(.horizontal, 16)
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(audioTracks, id: \.id) { track in
+                            Button(action: {
+                                onSelectAudioTrack(track.id)
+                            }) {
+                                HStack(spacing: 8) {
+                                    if track.id == currentAudioTrackId {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(Color.accentColor)
+                                            .frame(width: 12)
+                                    } else {
+                                        Color.clear
+                                            .frame(width: 12)
+                                    }
+
+                                    Text(track.displayName)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(track.id == currentAudioTrackId ? .white : .white.opacity(0.7))
+
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 5)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 100)
+                .padding(.bottom, 10)
+            }
+            .frame(width: 220)
+
+            // Divider
+            Rectangle()
+                .fill(Color.white.opacity(0.15))
+                .frame(width: 1)
+                .padding(.vertical, 10)
+
+            // Subtitles column
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Subtitles")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .padding(.horizontal, 16)
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // "Off" option
+                        Button(action: {
+                            onSelectSubtitleTrack(0)
+                        }) {
+                            HStack(spacing: 8) {
+                                if currentSubtitleTrackId == nil {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.accentColor)
+                                        .frame(width: 12)
+                                } else {
+                                    Color.clear
+                                        .frame(width: 12)
+                                }
+
+                                Text("Off")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(currentSubtitleTrackId == nil ? .white : .white.opacity(0.7))
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 5)
+                        }
+                        .buttonStyle(.plain)
+
+                        // Subtitle tracks
+                        ForEach(subtitleTracks, id: \.id) { track in
+                            Button(action: {
+                                onSelectSubtitleTrack(track.id)
+                            }) {
+                                HStack(spacing: 8) {
+                                    if track.id == currentSubtitleTrackId {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(Color.accentColor)
+                                            .frame(width: 12)
+                                    } else {
+                                        Color.clear
+                                            .frame(width: 12)
+                                    }
+
+                                    Text(track.displayName)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(track.id == currentSubtitleTrackId ? .white : .white.opacity(0.7))
+
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 5)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 100)
+                .padding(.bottom, 10)
+            }
+            .frame(width: 220)
+        }
+        .background(Color.black.opacity(0.95))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 6)
+        .padding(.trailing, 32)
+        .padding(.bottom, 140)
     }
 }
 
@@ -941,6 +1220,21 @@ private struct PlaybackSpeedModal: View {
 
 // MARK: - Custom PNG Icons
 
+private struct BackArrowIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "back-arrow") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "chevron.left")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
 private struct PlayIcon: View {
     var body: some View {
         if let nsImage = NSImage(named: "play") {
@@ -1070,6 +1364,21 @@ private struct PlaybackSpeedIcon: View {
                 .aspectRatio(contentMode: .fit)
         } else {
             Image(systemName: "gauge")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct SubtitlesIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "subtitles") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "captions.bubble")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
         }
@@ -1412,6 +1721,73 @@ private struct PlayerEpisodeRow: View {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHovered = hovering
             }
+        }
+    }
+}
+
+// MARK: - Thumbnail Preview View
+
+private struct ThumbnailPreviewView: View {
+    let time: TimeInterval
+    let image: NSImage?
+    let isLoading: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Thumbnail image or loading state
+            ZStack {
+                if let image = image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 200, height: 112)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                } else if isLoading {
+                    // Loading state
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.black.opacity(0.6))
+                        .frame(width: 200, height: 112)
+                        .overlay(
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.white)
+                        )
+                } else {
+                    // Placeholder
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.black.opacity(0.6))
+                        .frame(width: 200, height: 112)
+                        .overlay(
+                            Image(systemName: "photo")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.white.opacity(0.3))
+                        )
+                }
+            }
+
+            // Timestamp label
+            Text(formatTime(time))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.9))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        guard !seconds.isNaN && !seconds.isInfinite else { return "0:00" }
+        let totalSeconds = Int(seconds)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let secs = totalSeconds % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        } else {
+            return String(format: "%d:%02d", minutes, secs)
         }
     }
 }

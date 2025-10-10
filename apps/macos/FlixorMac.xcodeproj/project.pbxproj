@@ -69,6 +69,7 @@
 		A061 /* fullscreen-exit.png in Resources */ = {isa = PBXBuildFile; fileRef = B061 /* fullscreen-exit.png */; };
 		A062 /* fullscreen-enter.png in Resources */ = {isa = PBXBuildFile; fileRef = B062 /* fullscreen-enter.png */; };
 		A063 /* playback-speed.png in Resources */ = {isa = PBXBuildFile; fileRef = B063 /* playback-speed.png */; };
+		A064 /* thumbfast.lua in Resources */ = {isa = PBXBuildFile; fileRef = B064 /* thumbfast.lua */; };
 		C8D6025C2E97EBB8002C9348 /* libsoxr.0.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602152E97EBB4002C9348 /* libsoxr.0.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025D2E97EBB8002C9348 /* libswscale.8.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602162E97EBB4002C9348 /* libswscale.8.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025E2E97EBB8002C9348 /* libwebpmux.3.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602172E97EBB4002C9348 /* libwebpmux.3.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -141,8 +142,13 @@
 		C8D602A12E97EBB8002C9348 /* libzstd.1.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D6025A2E97EBB7002C9348 /* libzstd.1.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D602A22E97EBB8002C9348 /* liblcms2.2.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D6025B2E97EBB7002C9348 /* liblcms2.2.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D602A42E97F7D9002C9348 /* MPVVideoLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D602A32E97F7D9002C9348 /* MPVVideoLayer.swift */; };
-		C8D602A72E98E801002C9348 /* SVGView in Frameworks */ = {isa = PBXBuildFile; productRef = C8D602A62E98E801002C9348 /* SVGView */; };
-/* End PBXBuildFile section */
+		C8D602AE2E990765002C9348 /* BGRAImageReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D602AB2E990765002C9348 /* BGRAImageReader.swift */; };
+		C8D602AF2E990765002C9348 /* MPVThumbnailGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D602AC2E990765002C9348 /* MPVThumbnailGenerator.swift */; };
+		C8D602B02E990765002C9348 /* ThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D602AD2E990765002C9348 /* ThumbnailCache.swift */; };
+		C8D602B12E990765002C9348 /* ThumbnailMPVPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D602B22E990765002C9348 /* ThumbnailMPVPlayer.swift */; };
+		8F8A4EEF11F94AB2B11AD777 /* back-arrow.png in Resources */ = {isa = PBXBuildFile; fileRef = D160AC63894645548212EEF0 /* back-arrow.png */; };
+				4E24577161EC49F795708746 /* subtitles.png in Resources */ = {isa = PBXBuildFile; fileRef = 28F2733407E54826B6E93AC2 /* subtitles.png */; };
+		/* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		C8D602142E97EB25002C9348 /* CopyFiles */ = {
@@ -290,6 +296,7 @@
 		B061 /* fullscreen-exit.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "fullscreen-exit.png"; sourceTree = "<group>"; };
 		B062 /* fullscreen-enter.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "fullscreen-enter.png"; sourceTree = "<group>"; };
 		B063 /* playback-speed.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "playback-speed.png"; sourceTree = "<group>"; };
+		B064 /* thumbfast.lua */ = {isa = PBXFileReference; lastKnownFileType = text.script.lua; path = thumbfast.lua; sourceTree = "<group>"; };
 		B999 /* FlixorMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlixorMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8D602152E97EBB4002C9348 /* libsoxr.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libsoxr.0.dylib; path = deps/lib/libsoxr.0.dylib; sourceTree = "<group>"; };
 		C8D602162E97EBB4002C9348 /* libswscale.8.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libswscale.8.dylib; path = deps/lib/libswscale.8.dylib; sourceTree = "<group>"; };
@@ -363,20 +370,36 @@
 		C8D6025A2E97EBB7002C9348 /* libzstd.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libzstd.1.dylib; path = deps/lib/libzstd.1.dylib; sourceTree = "<group>"; };
 		C8D6025B2E97EBB7002C9348 /* liblcms2.2.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = liblcms2.2.dylib; path = deps/lib/liblcms2.2.dylib; sourceTree = "<group>"; };
 		C8D602A32E97F7D9002C9348 /* MPVVideoLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MPVVideoLayer.swift; sourceTree = "<group>"; };
-/* End PBXFileReference section */
+		C8D602AB2E990765002C9348 /* BGRAImageReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BGRAImageReader.swift; sourceTree = "<group>"; };
+		C8D602AC2E990765002C9348 /* MPVThumbnailGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MPVThumbnailGenerator.swift; sourceTree = "<group>"; };
+		C8D602AD2E990765002C9348 /* ThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCache.swift; sourceTree = "<group>"; };
+		C8D602B22E990765002C9348 /* ThumbnailMPVPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailMPVPlayer.swift; sourceTree = "<group>"; };
+		D160AC63894645548212EEF0 /* back-arrow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "back-arrow.png"; sourceTree = "<group>"; };
+				28F2733407E54826B6E93AC2 /* subtitles.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "subtitles.png"; sourceTree = "<group>"; };
+		/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		C001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C8D602A72E98E801002C9348 /* SVGView in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C8D602AA2E990749002C9348 /* Thumbnail */ = {
+			isa = PBXGroup;
+			children = (
+				C8D602AB2E990765002C9348 /* BGRAImageReader.swift */,
+				C8D602AC2E990765002C9348 /* MPVThumbnailGenerator.swift */,
+				C8D602AD2E990765002C9348 /* ThumbnailCache.swift */,
+				C8D602B22E990765002C9348 /* ThumbnailMPVPlayer.swift */,
+			);
+			path = Thumbnail;
+			sourceTree = "<group>";
+		};
 		D001 = {
 			isa = PBXGroup;
 			children = (
@@ -527,6 +550,7 @@
 		D007 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C8D602AA2E990749002C9348 /* Thumbnail */,
 				D016 /* API */,
 				D017 /* Auth */,
 			);
@@ -674,6 +698,9 @@
 				B061 /* fullscreen-exit.png */,
 				B062 /* fullscreen-enter.png */,
 				B063 /* playback-speed.png */,
+				B064 /* thumbfast.lua */,
+				D160AC63894645548212EEF0 /* back-arrow.png */,
+				28F2733407E54826B6E93AC2 /* subtitles.png */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -724,7 +751,6 @@
 			);
 			mainGroup = D001;
 			packageReferences = (
-				C8D602A52E98E801002C9348 /* XCRemoteSwiftPackageReference "SVGView" */,
 			);
 			productRefGroup = D099 /* Products */;
 			projectDirPath = "";
@@ -752,7 +778,10 @@
 				A061 /* fullscreen-exit.png in Resources */,
 				A062 /* fullscreen-enter.png in Resources */,
 				A063 /* playback-speed.png in Resources */,
-			);
+				A064 /* thumbfast.lua in Resources */,
+				8F8A4EEF11F94AB2B11AD777 /* back-arrow.png in Resources */,
+				4E24577161EC49F795708746 /* subtitles.png in Resources */,
+);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
@@ -767,6 +796,10 @@
 				A003 /* SidebarView.swift in Sources */,
 				A004 /* User.swift in Sources */,
 				A005 /* APIError.swift in Sources */,
+				C8D602AE2E990765002C9348 /* BGRAImageReader.swift in Sources */,
+				C8D602AF2E990765002C9348 /* MPVThumbnailGenerator.swift in Sources */,
+				C8D602B02E990765002C9348 /* ThumbnailCache.swift in Sources */,
+				C8D602B12E990765002C9348 /* ThumbnailMPVPlayer.swift in Sources */,
 				A006 /* APIClient.swift in Sources */,
 				A007 /* KeychainHelper.swift in Sources */,
 				A008 /* SessionManager.swift in Sources */,
@@ -1029,25 +1062,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		C8D602A52E98E801002C9348 /* XCRemoteSwiftPackageReference "SVGView" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/exyte/SVGView";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.6;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		C8D602A62E98E801002C9348 /* SVGView */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C8D602A52E98E801002C9348 /* XCRemoteSwiftPackageReference "SVGView" */;
-			productName = SVGView;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = G001 /* Project object */;
 }
