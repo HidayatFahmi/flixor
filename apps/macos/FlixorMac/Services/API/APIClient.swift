@@ -54,7 +54,7 @@ class APIClient: ObservableObject {
 
     // MARK: - Request Methods
 
-    func get<T: Decodable>(_ path: String, queryItems: [URLQueryItem]? = nil) async throws -> T {
+    func get<T: Decodable>(_ path: String, queryItems: [URLQueryItem]? = nil, bypassCache: Bool = false) async throws -> T {
         var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
         urlComponents?.queryItems = queryItems
 
@@ -64,6 +64,12 @@ class APIClient: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+
+        // Bypass cache for critical requests (e.g., metadata with part keys)
+        if bypassCache {
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        }
+
         addHeaders(to: &request)
 
         return try await performRequest(request)
@@ -117,7 +123,8 @@ class APIClient: ObservableObject {
 
     private func performRequest<T: Decodable>(_ request: URLRequest) async throws -> T {
         // Log request
-        print("🌐 [API] \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")")
+        let cachePolicy = request.cachePolicy == .reloadIgnoringLocalAndRemoteCacheData ? " [BYPASS CACHE]" : ""
+        print("🌐 [API] \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "unknown")\(cachePolicy)")
         if let queryItems = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems {
             print("   Query: \(queryItems.map { "\($0.name)=\($0.value ?? "nil")" }.joined(separator: ", "))")
         }

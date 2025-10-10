@@ -67,6 +67,8 @@ class PlayerViewModel: ObservableObject {
 
     // MPV error detection
     private var fileStartTime: Date?
+    private var directPlayRetryCount: Int = 0
+    private var maxDirectPlayRetries: Int = 2
 
     // Countdown timer for next episode
     private var countdownTimer: Timer?
@@ -170,6 +172,7 @@ class PlayerViewModel: ObservableObject {
                 case "file-loaded":
                     print("✅ [Player] MPV file loaded")
                     self.isLoading = false
+                    self.directPlayRetryCount = 0  // Reset counter on successful load
                     self.applyInitialSeekIfNeeded()
                     // Load available tracks
                     self.loadTracks()
@@ -188,13 +191,39 @@ class PlayerViewModel: ObservableObject {
                         let timeSinceStart = Date().timeIntervalSince(startTime)
                         if timeSinceStart < 3.0 {
                             print("❌ [Player] MPV playback failed (file-ended after \(String(format: "%.1f", timeSinceStart))s) - likely connection error")
-                            self.error = "Failed to load video. Please check your network connection and try again."
-                            self.isLoading = false
-                            self.isPlaying = false
+                            // If direct play URL failed (404, expired token, etc.), try to refresh it
+                            if self.currentURLIsHLS == false {
+                                if self.directPlayRetryCount < self.maxDirectPlayRetries {
+                                    self.directPlayRetryCount += 1
+                                    print("🔄 [Player] Attempting to refresh direct play URL (attempt \(self.directPlayRetryCount)/\(self.maxDirectPlayRetries))")
+                                    self.fileStartTime = nil
+                                    Task {
+                                        let success = await self.retryDirectPlay()
+                                        if !success {
+                                            print("↩️ [Player] Direct play retry failed; falling back to HLS")
+                                            self.directPlayRetryCount = 0
+                                            await self.retryWithHLS()
+                                        }
+                                    }
+                                } else {
+                                    print("⚠️ [Player] Max direct play retries (\(self.maxDirectPlayRetries)) reached; falling back to HLS")
+                                    self.directPlayRetryCount = 0
+                                    self.fileStartTime = nil
+                                    Task {
+                                        await self.retryWithHLS()
+                                    }
+                                }
+                            } else {
+                                // Already using HLS, can't retry further
+                                self.error = "Failed to load video. Please check your network connection and try again."
+                                self.isLoading = false
+                                self.isPlaying = false
+                            }
                             return
                         }
                     }
                     print("✅ [Player] MPV playback finished")
+                    self.directPlayRetryCount = 0  // Reset counter on successful playback
                     self.handlePlaybackEnd()
                 default:
                     print("ℹ️ [Player] MPV event (unhandled): \(event)")
@@ -345,6 +374,7 @@ class PlayerViewModel: ObservableObject {
     private func loadStreamURL() async {
         isLoading = true
         error = nil
+        directPlayRetryCount = 0  // Reset retry counter for new stream
 
         do {
             // Validate this is a Plex item
@@ -433,7 +463,8 @@ class PlayerViewModel: ObservableObject {
             struct MetaResponse: Decodable { let Media: [MetaMedia]? }
             var directURL: URL? = nil
             do {
-                let meta: MetaResponse = try await api.get("/api/plex/metadata/\(ratingKey)")
+                // Bypass cache to get fresh part keys (they can change when Plex rescans)
+                let meta: MetaResponse = try await api.get("/api/plex/metadata/\(ratingKey)", bypassCache: true)
                 let m = meta.Media?.first
                 let container = (m?.container ?? "").lowercased()
                 let vcodec = (m?.videoCodec ?? "").lowercased()
@@ -645,13 +676,26 @@ class PlayerViewModel: ObservableObject {
                     case .readyToPlay:
                         print("✅ [Player] Ready to play")
                         self.isLoading = false
+                        self.directPlayRetryCount = 0  // Reset counter on successful load
                         // Apply initial resume seek once when ready
                         self.applyInitialSeekIfNeeded()
                     case .failed:
                         print("❌ [Player] Failed: \(playerItem.error?.localizedDescription ?? "Unknown error")")
                         if self.currentURLIsHLS == false {
-                            print("↩️ [Player] Direct play failed; falling back to HLS")
-                            await self.reloadAsHLSFallback()
+                            if self.directPlayRetryCount < self.maxDirectPlayRetries {
+                                self.directPlayRetryCount += 1
+                                print("🔄 [Player] Attempting to refresh direct play URL (attempt \(self.directPlayRetryCount)/\(self.maxDirectPlayRetries))")
+                                let success = await self.retryDirectPlay()
+                                if !success {
+                                    print("↩️ [Player] Direct play retry failed; falling back to HLS")
+                                    self.directPlayRetryCount = 0
+                                    await self.reloadAsHLSFallback()
+                                }
+                            } else {
+                                print("⚠️ [Player] Max direct play retries (\(self.maxDirectPlayRetries)) reached; falling back to HLS")
+                                self.directPlayRetryCount = 0
+                                await self.reloadAsHLSFallback()
+                            }
                         } else {
                             self.error = playerItem.error?.localizedDescription ?? "Playback failed"
                             self.isLoading = false
@@ -1171,6 +1215,248 @@ class PlayerViewModel: ObservableObject {
     }
 
     // MARK: - Retry
+
+    /// Retry direct play with fresh metadata and token (handles URL expiration)
+    private func retryDirectPlay() async -> Bool {
+        print("🔄 [Player] Retrying direct play with fresh metadata and token")
+
+        do {
+            // 1. Get ratingKey
+            let ratingKey = item.id.replacingOccurrences(of: "plex:", with: "")
+            guard !ratingKey.isEmpty else {
+                print("❌ [Player] Invalid ratingKey")
+                return false
+            }
+
+            // 2. Re-fetch metadata to get fresh part key
+            struct MetaMedia: Decodable {
+                struct Part: Decodable { let key: String? }
+                let Part: [Part]?
+                let container: String?
+                let videoCodec: String?
+                let audioCodec: String?
+            }
+            struct MetaResponse: Decodable { let Media: [MetaMedia]? }
+            // CRITICAL: Bypass all caching to get truly fresh part key
+            let meta: MetaResponse = try await api.get("/api/plex/metadata/\(ratingKey)", bypassCache: true)
+
+            guard let partKey = meta.Media?.first?.Part?.first?.key, !partKey.isEmpty else {
+                print("❌ [Player] No part key in fresh metadata")
+                return false
+            }
+
+            // Check if part key changed (indicates Plex rescanned library)
+            if let oldURL = self.streamURL?.absoluteString, oldURL.contains("/library/parts/") {
+                let oldPartKey = oldURL.components(separatedBy: "?").first?.components(separatedBy: "/library/parts").last ?? ""
+                let newPartKey = partKey.replacingOccurrences(of: "/library/parts", with: "")
+                if !oldPartKey.isEmpty && oldPartKey != newPartKey {
+                    print("🔄 [Player] Part key changed: \(oldPartKey) → \(newPartKey)")
+                    print("   (Plex rescanned library and reassigned file IDs)")
+                }
+            }
+
+            print("✅ [Player] Fresh part key: \(partKey)")
+
+            // 3. Re-fetch server connection and token
+            let servers = try await api.getPlexServers()
+            guard let activeServer = servers.first(where: { $0.isActive == true }) else {
+                print("❌ [Player] No active server")
+                return false
+            }
+
+            let connectionsResponse = try await api.getPlexConnections(serverId: activeServer.id)
+            guard let connection = connectionsResponse.connections.first(where: { $0.local == true })
+                                  ?? connectionsResponse.connections.first else {
+                print("❌ [Player] No server connection")
+                return false
+            }
+
+            let baseUrl = connection.uri.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+            let authServers = try await api.getPlexAuthServers()
+            guard let serverWithToken = authServers.first(where: {
+                $0.clientIdentifier == activeServer.id ||
+                $0.clientIdentifier == activeServer.machineIdentifier
+            }), let token = serverWithToken.token as String? else {
+                print("❌ [Player] No fresh token")
+                return false
+            }
+
+            print("✅ [Player] Fresh token obtained")
+
+            // 4. Build new direct play URL
+            let newDirectURL = "\(baseUrl)\(partKey)?X-Plex-Token=\(token)"
+            guard let url = URL(string: newDirectURL) else {
+                print("❌ [Player] Invalid URL")
+                return false
+            }
+
+            print("✅ [Player] New direct play URL: \(newDirectURL)")
+
+            // 5. Update state
+            self.streamURL = url
+            self.currentURLIsHLS = false
+            self.plexBaseUrl = baseUrl
+            self.plexToken = token
+
+            // 6. Reload based on backend
+            let savedPosition = currentTime > 2 ? currentTime : 0
+
+            switch playerBackend {
+            case .mpv:
+                guard let mpvController = self.mpvController else {
+                    print("❌ [Player] MPV controller not available")
+                    return false
+                }
+
+                print("🎬 [MPV] Reloading file with fresh URL")
+                self.fileStartTime = nil // Reset to detect new loading errors
+                mpvController.loadFile(url.absoluteString)
+
+                // Seek will happen after file-loaded event via applyInitialSeekIfNeeded
+                // But we need to preserve the position
+                if savedPosition > 2 {
+                    // Wait for file to load, then seek
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    if self.duration > 0 && savedPosition < self.duration {
+                        self.seek(to: savedPosition)
+                        print("⏩ [Player] Restored position: \(Int(savedPosition))s")
+                    }
+                }
+
+            case .avplayer:
+                let asset = AVURLAsset(url: url)
+                let playerItem = AVPlayerItem(asset: asset)
+                playerItem.preferredForwardBufferDuration = 10 // Direct play: lighter buffer
+                playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+                playerItem.preferredPeakBitRate = 0
+
+                if self.player == nil {
+                    self.player = AVPlayer(playerItem: playerItem)
+                    self.player?.automaticallyWaitsToMinimizeStalling = true
+                    self.player?.allowsExternalPlayback = false
+                } else {
+                    self.player?.replaceCurrentItem(with: playerItem)
+                }
+
+                setupPlayerObservers(playerItem: playerItem)
+                setupPlayerStateObservers()
+                self.player?.rate = self.playbackSpeed
+                self.isPlaying = true
+
+                // Restore position
+                if savedPosition > 2 {
+                    seek(to: savedPosition)
+                    print("⏩ [Player] Restored position: \(Int(savedPosition))s")
+                }
+            }
+
+            print("✅ [Player] Successfully retried direct play with fresh URL")
+            return true
+
+        } catch {
+            print("❌ [Player] Failed to retry direct play: \(error)")
+            return false
+        }
+    }
+
+    /// Retry with HLS transcoding as fallback (for MPV backend)
+    private func retryWithHLS() async {
+        print("↩️ [Player] Falling back to HLS transcoding")
+
+        do {
+            let ratingKey = item.id.replacingOccurrences(of: "plex:", with: "")
+            struct StreamResponse: Codable { let url: String }
+            let response: StreamResponse = try await api.get(
+                "/api/plex/stream/\(ratingKey)",
+                queryItems: [
+                    URLQueryItem(name: "protocol", value: "hls"),
+                    URLQueryItem(name: "directPlay", value: "0"),
+                    URLQueryItem(name: "directStream", value: "0"),
+                    URLQueryItem(name: "autoAdjustQuality", value: "0"),
+                    URLQueryItem(name: "maxVideoBitrate", value: "20000"),
+                    URLQueryItem(name: "videoCodec", value: "h264"),
+                    URLQueryItem(name: "audioCodec", value: "aac"),
+                    URLQueryItem(name: "container", value: "mpegts")
+                ]
+            )
+            guard let url = URL(string: response.url) else {
+                throw NSError(domain: "PlayerError", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid HLS URL"])
+            }
+
+            self.streamURL = url
+            self.currentURLIsHLS = true
+
+            // Handle session URL if needed (start.m3u8)
+            var finalURL = url
+            if url.absoluteString.contains("start.m3u8") {
+                print("📺 [Player] Starting HLS transcode session")
+
+                // Extract session ID
+                if let sessionParam = URLComponents(string: url.absoluteString)?.queryItems?.first(where: { $0.name == "session" })?.value {
+                    self.sessionId = sessionParam
+                }
+
+                // Start the session
+                let (_, startResponse) = try await URLSession.shared.data(from: url)
+                if let httpResponse = startResponse as? HTTPURLResponse {
+                    print("📺 [Player] Start response: \(httpResponse.statusCode)")
+                }
+
+                // Wait for transcoder (MPV needs more time)
+                let delaySeconds = 5
+                print("⏳ [Player] Waiting \(delaySeconds)s for transcoder...")
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds) * 1_000_000_000)
+
+                // Build session URL
+                if let sessionId = self.sessionId,
+                   let baseUrlString = url.absoluteString.components(separatedBy: "/video/").first,
+                   let token = URLComponents(string: url.absoluteString)?.queryItems?.first(where: { $0.name == "X-Plex-Token" })?.value {
+                    let sessionURL = "\(baseUrlString)/video/:/transcode/universal/session/\(sessionId)/base/index.m3u8?X-Plex-Token=\(token)"
+                    if let sessionUrl = URL(string: sessionURL) {
+                        finalURL = sessionUrl
+                        self.streamURL = sessionUrl
+                        print("✅ [Player] Using session URL: \(sessionURL)")
+                    }
+                }
+            }
+
+            let savedPosition = currentTime > 2 ? currentTime : 0
+
+            switch playerBackend {
+            case .mpv:
+                guard let mpvController = self.mpvController else {
+                    throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "MPV controller not available"])
+                }
+
+                print("🎬 [MPV] Loading HLS stream")
+                self.fileStartTime = nil
+                mpvController.loadFile(finalURL.absoluteString)
+
+                // Restore position after file loads
+                if savedPosition > 2 {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds for HLS
+                    if self.duration > 0 && savedPosition < self.duration {
+                        self.seek(to: savedPosition)
+                        print("⏩ [Player] Restored position: \(Int(savedPosition))s")
+                    }
+                }
+
+            case .avplayer:
+                // AVPlayer has its own reloadAsHLSFallback method
+                await reloadAsHLSFallback()
+            }
+
+            self.isLoading = false
+            print("✅ [Player] HLS fallback successful")
+
+        } catch {
+            print("❌ [Player] HLS fallback failed: \(error)")
+            self.error = "Failed to load video: \(error.localizedDescription)"
+            self.isLoading = false
+            self.isPlaying = false
+        }
+    }
 
     func retry() {
         print("🔄 [Player] Retrying playback")
