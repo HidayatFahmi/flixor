@@ -514,8 +514,15 @@ export class PlexClient {
     usp.set('partIndex', String(options.partIndex ?? 0));
     usp.set('protocol', protocol);
     usp.set('fastSeek', '1');
-    usp.set('directPlay', '0');
-    usp.set('directStream', '1');
+
+    // Normalize directPlay to '1' or '0'
+    usp.set('directPlay', (options.directPlay ?? '0') === '1' ? '1' : '0');
+
+    // When transcoding (quality explicitly set), disable directStream; otherwise allow it
+    const hasQuality = options.quality !== undefined && options.quality !== null && options.quality !== '';
+    const directStream = hasQuality ? '0' : ((options.directStream ?? '1') === '1' ? '1' : '0');
+    usp.set('directStream', directStream);
+
     usp.set('directStreamAudio', '1');
     usp.set('subtitleSize', '100');
     usp.set('audioBoost', '100');
@@ -528,8 +535,9 @@ export class PlexClient {
       usp.set('manifestSubtitles', '1');
     }
 
-    // Frontend used autoAdjustQuality=0 unless explicitly enabled
-    usp.set('autoAdjustQuality', options.autoAdjustQuality ? '1' : '0');
+    // Normalize autoAdjustQuality to '1' or '0' (string '0' is truthy, so explicitly check)
+    const autoAdjust = (options.autoAdjustQuality ?? '0') === '1' ? '1' : '0';
+    usp.set('autoAdjustQuality', autoAdjust);
     if (options.quality != null) usp.set('maxVideoBitrate', String(Number(options.quality)));
     if (options.resolution) usp.set('videoResolution', options.resolution);
     // Omit audio/subtitle stream selection from the URL like the legacy frontend dash path
@@ -537,6 +545,17 @@ export class PlexClient {
     const sep = usp.toString().length ? '?' : '';
     const path = `/video/:/transcode/universal/start.${extension}${sep}${usp.toString()}`;
     const urlBase = `${this.axiosClient.defaults.baseURL}${path}`;
+
+    // Build client profile for DASH transcoding (tells Plex what codecs/resolutions we support)
+    const clientProfile = [
+      'add-limitation(scope=videoCodec&scopeName=hevc&type=upperBound&name=video.width&value=4096&replace=true)',
+      'add-limitation(scope=videoCodec&scopeName=hevc&type=upperBound&name=video.height&value=2160&replace=true)',
+      'add-limitation(scope=videoCodec&scopeName=hevc&type=upperBound&name=video.bitDepth&value=10&replace=true)',
+      'append-transcode-target-codec(type=videoProfile&context=streaming&protocol=dash&videoCodec=h264)',
+      'append-transcode-target-codec(type=videoProfile&context=streaming&protocol=hls&videoCodec=h264)',
+      'append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)',
+      'add-limitation(scope=videoTranscodeTarget&scopeName=hevc&scopeType=videoCodec&context=streaming&protocol=dash&type=match&name=video.colorTrc&list=bt709|bt470m|bt470bg|smpte170m|smpte240m|bt2020-10|smpte2084&isRequired=false)'
+    ].join('+');
 
     // Append X-Plex headers as query params to mirror frontend behavior
     const headerParams = new URLSearchParams({
@@ -549,6 +568,7 @@ export class PlexClient {
       'X-Plex-Device-Name': 'Plex Media Backend',
       'X-Plex-Device-Screen-Resolution': process.env.PLEX_SCREEN_RES || '1920x1080',
       'X-Plex-Language': 'en',
+      'X-Plex-Client-Profile-Extra': clientProfile,
     });
     // Session identifier
     const sessionId = `sess_${this.userId}_${ratingKey}_${Date.now()}`;

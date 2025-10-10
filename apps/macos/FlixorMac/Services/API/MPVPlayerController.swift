@@ -131,8 +131,8 @@ class MPVPlayerController {
         setOption("tls-verify", value: "no")
         setOption("stream-lavf-o", value: "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5")
 
-        // HLS specific options
-        setOption("hls-bitrate", value: "max")
+        // Note: hls-bitrate removed - let Plex control quality via maxVideoBitrate parameter
+        // MPV's adaptive bitrate selection will respect the qualities in the manifest
 
         // Audio settings
         setOption("audio-channels", value: "stereo")
@@ -750,22 +750,27 @@ class MPVPlayerController {
         // This must be done or mpv_terminate_destroy will abort
         if let renderContext = mpvRenderContext {
             print("🛑 [MPV] Freeing render context...")
+
+            // Clear update callback first to prevent any new render requests
             mpv_render_context_set_update_callback(renderContext, nil, nil)
 
             // Lock GL context if available
             if let glContext = openGLContext {
                 CGLLockContext(glContext)
                 CGLSetCurrentContext(glContext)
-            }
 
-            mpv_render_context_free(renderContext)
-            mpvRenderContext = nil
+                // Free render context with GL context active
+                mpv_render_context_free(renderContext)
 
-            if let glContext = openGLContext {
                 CGLSetCurrentContext(nil)
                 CGLUnlockContext(glContext)
+            } else {
+                // No GL context - this might cause issues, but try anyway
+                print("⚠️ [MPV] Freeing render context without GL context")
+                mpv_render_context_free(renderContext)
             }
 
+            mpvRenderContext = nil
             print("✅ [MPV] Render context freed")
         }
 

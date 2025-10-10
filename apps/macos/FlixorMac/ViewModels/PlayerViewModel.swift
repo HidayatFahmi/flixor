@@ -10,6 +10,90 @@ import AVKit
 import SwiftUI
 import Combine
 
+// MARK: - Playback Quality
+
+/// Quality profiles for video playback with transcoding support
+enum PlaybackQuality: String, CaseIterable, Identifiable, Codable {
+    case original = "Original"           // Direct Play (no transcoding)
+    case ultraHD = "4K (80 Mbps)"       // 3840x2160, 80000 kbps
+    case fullHD = "1080p (20 Mbps)"     // 1920x1080, 20000 kbps
+    case hd = "720p (10 Mbps)"          // 1280x720, 10000 kbps
+    case sd = "480p (4 Mbps)"           // 854x480, 4000 kbps
+    case low = "360p (2 Mbps)"          // 640x360, 2000 kbps
+
+    var id: String { rawValue }
+
+    /// Bitrate in kbps (nil for original/direct play)
+    var bitrate: Int? {
+        switch self {
+        case .original: return nil
+        case .ultraHD: return 80000
+        case .fullHD: return 20000
+        case .hd: return 10000
+        case .sd: return 4000
+        case .low: return 2000
+        }
+    }
+
+    /// Resolution string for Plex API (nil for original/direct play)
+    var resolution: String? {
+        switch self {
+        case .original: return nil
+        case .ultraHD: return "3840x2160"
+        case .fullHD: return "1920x1080"
+        case .hd: return "1280x720"
+        case .sd: return "854x480"
+        case .low: return "640x360"
+        }
+    }
+
+    /// Whether this quality requires transcoding
+    var requiresTranscoding: Bool {
+        return self != .original
+    }
+
+    /// Resolution width for comparison
+    var widthValue: Int? {
+        switch self {
+        case .original: return nil
+        case .ultraHD: return 3840
+        case .fullHD: return 1920
+        case .hd: return 1280
+        case .sd: return 854
+        case .low: return 640
+        }
+    }
+
+    /// Filter qualities to only show options equal to or lower than source
+    static func availableQualities(sourceWidth: Int?) -> [PlaybackQuality] {
+        guard let sourceWidth = sourceWidth else {
+            // If we don't know source resolution, show all options
+            return PlaybackQuality.allCases
+        }
+
+        // Always include Original (Direct Play)
+        var available: [PlaybackQuality] = [.original]
+
+        // Add transcoding options that are <= source resolution
+        if sourceWidth >= 3840 {
+            available.append(.ultraHD)
+        }
+        if sourceWidth >= 1920 {
+            available.append(.fullHD)
+        }
+        if sourceWidth >= 1280 {
+            available.append(.hd)
+        }
+        if sourceWidth >= 854 {
+            available.append(.sd)
+        }
+        // Always include low quality as a fallback
+        available.append(.low)
+
+        return available
+    }
+}
+
 @MainActor
 class PlayerViewModel: ObservableObject {
     // MARK: - Published Properties
@@ -18,6 +102,7 @@ class PlayerViewModel: ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var isLoading = true
+    @Published var isChangingQuality = false
     @Published var error: String?
     @Published var volume: Float = 1.0
     @Published var isMuted = false
@@ -26,8 +111,17 @@ class PlayerViewModel: ObservableObject {
 
     // Stream info
     @Published var streamURL: URL?
-    @Published var availableQualities: [String] = []
-    @Published var selectedQuality: String = "Original"
+    @Published var selectedQuality: PlaybackQuality = .original
+    @Published var isTranscoding: Bool = false  // True when using transcoding (non-original quality)
+
+    // Source media info
+    @Published var sourceWidth: Int? = nil
+    @Published var sourceHeight: Int? = nil
+
+    // Computed: Available qualities filtered by source resolution
+    var availableQualities: [PlaybackQuality] {
+        return PlaybackQuality.availableQualities(sourceWidth: sourceWidth)
+    }
 
     // MPV Track info (audio/subtitle)
     @Published var availableAudioTracks: [MPVTrack] = []
@@ -386,6 +480,15 @@ class PlayerViewModel: ObservableObject {
                 )
             }
 
+            // Validate item type - only movies, episodes, and clips have playable media
+            guard ["movie", "episode", "clip"].contains(item.type) else {
+                throw NSError(
+                    domain: "PlayerError",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: "Cannot play \(item.type) type. Only movies and episodes can be played.\n\nPlease select an episode from the show."]
+                )
+            }
+
             // Extract ratingKey from item.id
             let ratingKey = item.id.replacingOccurrences(of: "plex:", with: "")
 
@@ -452,48 +555,67 @@ class PlayerViewModel: ObservableObject {
 
             print("📺 [Player] Got access token")
 
-            // First try: Direct Play via Plex part URL if available
+            // First try: Direct Play via Plex part URL if available (only if quality is Original)
             struct MetaMedia: Decodable {
                 struct Part: Decodable { let key: String? }
                 let Part: [Part]?
                 let container: String?
                 let videoCodec: String?
                 let audioCodec: String?
+                let width: Int?
+                let height: Int?
             }
             struct MetaResponse: Decodable { let Media: [MetaMedia]? }
             var directURL: URL? = nil
+
+            // Always fetch metadata to get source resolution (for quality filtering)
             do {
                 // Bypass cache to get fresh part keys (they can change when Plex rescans)
                 let meta: MetaResponse = try await api.get("/api/plex/metadata/\(ratingKey)", bypassCache: true)
                 let m = meta.Media?.first
-                let container = (m?.container ?? "").lowercased()
-                let vcodec = (m?.videoCodec ?? "").lowercased()
-                let acodec = (m?.audioCodec ?? "").lowercased()
 
-                // MPV can handle MKV/HEVC/TrueHD directly, AVPlayer cannot
-                let allowDirect: Bool
-                if playerBackend == .mpv {
-                    // MPV: Allow all formats, it's very capable
-                    allowDirect = true
-                    print("✅ [Player] MPV backend: Allowing direct play for all codecs")
-                } else {
-                    // AVPlayer: Gate direct play for incompatible formats
-                    let unsafeContainer = container.contains("mkv") || container.contains("mka")
-                    let unsafeVideo = vcodec.contains("hevc") || vcodec.contains("dvh") || vcodec.contains("dvhe")
-                    let unsafeAudio = acodec.contains("truehd") || acodec.contains("eac3")
-                    allowDirect = !(unsafeContainer || unsafeVideo || unsafeAudio)
-                    if !allowDirect {
-                        print("🚫 [Player] AVPlayer: Skipping Direct Play due to incompatible container/codec: cont=\(container), v=\(vcodec), a=\(acodec)")
-                    }
+                // Store source resolution for quality filtering
+                if let width = m?.width {
+                    self.sourceWidth = width
+                    print("📺 [Player] Source resolution: \(width)x\(m?.height ?? 0)")
+                }
+                if let height = m?.height {
+                    self.sourceHeight = height
                 }
 
-                if allowDirect, let key = m?.Part?.first?.key, !key.isEmpty {
-                    let direct = "\(baseUrl)\(key)?X-Plex-Token=\(token)"
-                    directURL = URL(string: direct)
-                    if directURL != nil { print("🎯 [Player] Attempting Direct Play: \(direct)") }
+                // Skip Direct Play if user selected a specific quality (transcoding required)
+                if selectedQuality == .original {
+                    let container = (m?.container ?? "").lowercased()
+                    let vcodec = (m?.videoCodec ?? "").lowercased()
+                    let acodec = (m?.audioCodec ?? "").lowercased()
+
+                    // MPV can handle MKV/HEVC/TrueHD directly, AVPlayer cannot
+                    let allowDirect: Bool
+                    if playerBackend == .mpv {
+                        // MPV: Allow all formats, it's very capable
+                        allowDirect = true
+                        print("✅ [Player] MPV backend: Allowing direct play for all codecs")
+                    } else {
+                        // AVPlayer: Gate direct play for incompatible formats
+                        let unsafeContainer = container.contains("mkv") || container.contains("mka")
+                        let unsafeVideo = vcodec.contains("hevc") || vcodec.contains("dvh") || vcodec.contains("dvhe")
+                        let unsafeAudio = acodec.contains("truehd") || acodec.contains("eac3")
+                        allowDirect = !(unsafeContainer || unsafeVideo || unsafeAudio)
+                        if !allowDirect {
+                            print("🚫 [Player] AVPlayer: Skipping Direct Play due to incompatible container/codec: cont=\(container), v=\(vcodec), a=\(acodec)")
+                        }
+                    }
+
+                    if allowDirect, let key = m?.Part?.first?.key, !key.isEmpty {
+                        let direct = "\(baseUrl)\(key)?X-Plex-Token=\(token)"
+                        directURL = URL(string: direct)
+                        if directURL != nil { print("🎯 [Player] Attempting Direct Play: \(direct)") }
+                    }
+                } else {
+                    print("🎚️ [Player] Quality set to \(selectedQuality.rawValue) - transcoding required, skipping Direct Play")
                 }
             } catch {
-                print("⚠️ [Player] Could not fetch metadata for direct play: \(error)")
+                print("⚠️ [Player] Could not fetch metadata: \(error)")
             }
 
             var startURL: URL
@@ -503,21 +625,12 @@ class PlayerViewModel: ObservableObject {
                 startURL = d
                 isDirectPlay = true
             } else {
-                // Fallback: backend HLS endpoint
-                print("📺 [Player] Requesting stream URL from backend (HLS)")
+                // Fallback: backend HLS endpoint with selected quality
+                print("📺 [Player] Requesting stream URL from backend (HLS, quality: \(selectedQuality.rawValue))")
                 struct StreamResponse: Codable { let url: String }
                 let response: StreamResponse = try await api.get(
                     "/api/plex/stream/\(ratingKey)",
-                    queryItems: [
-                        URLQueryItem(name: "protocol", value: "hls"),
-                        URLQueryItem(name: "directPlay", value: "0"),
-                        URLQueryItem(name: "directStream", value: "0"),
-                        URLQueryItem(name: "autoAdjustQuality", value: "0"),
-                        URLQueryItem(name: "maxVideoBitrate", value: "20000"),
-                        URLQueryItem(name: "videoCodec", value: "h264"),
-                        URLQueryItem(name: "audioCodec", value: "aac"),
-                        URLQueryItem(name: "container", value: "mpegts")
-                    ]
+                    queryItems: buildTranscodeQueryItems(quality: selectedQuality)
                 )
                 print("📺 [Player] Received stream URL: \(response.url)")
                 guard let u = URL(string: response.url) else {
@@ -525,47 +638,26 @@ class PlayerViewModel: ObservableObject {
                 }
                 startURL = u
                 self.currentURLIsHLS = true
+                self.isTranscoding = selectedQuality.requiresTranscoding
             }
 
-            // The start.m3u8 URL needs to be called to initiate the session
-            // Then we use the session-based URL for actual playback
-            // Skip session handling for direct play
-            if !isDirectPlay && startURL.absoluteString.contains("start.m3u8") {
-                print("📺 [Player] Starting transcode session")
+            // Handle transcoding URLs
+            // DASH: Use start.mpd URL directly (like web player)
+            // Direct Play: Use URL as-is
+            if !isDirectPlay && startURL.absoluteString.contains("start.mpd") {
+                // DASH transcode: Use start.mpd directly (MPV/DASH.js handles it)
+                print("📺 [Player] Using DASH transcode URL directly")
 
-                // Extract session ID from URL
+                // Extract session ID for cleanup
                 if let sessionParam = URLComponents(string: startURL.absoluteString)?.queryItems?.first(where: { $0.name == "session" })?.value {
                     self.sessionId = sessionParam
                 }
 
-                // Start the session by fetching the start URL
-                let (_, startResponse) = try await URLSession.shared.data(from: startURL)
-                if let httpResponse = startResponse as? HTTPURLResponse {
-                    print("📺 [Player] Start response: \(httpResponse.statusCode)")
-                }
+                self.streamURL = startURL
+                print("✅ [Player] DASH URL: \(startURL.absoluteString)")
 
-                // Wait for session to initialize
-                // MPV needs more time for transcoder to generate segments
-                let delaySeconds = playerBackend == .mpv ? 5 : 1
-                print("⏳ [Player] Waiting \(delaySeconds)s for transcoder to generate segments...")
-                try? await Task.sleep(nanoseconds: UInt64(delaySeconds) * 1_000_000_000)
-                print("✅ [Player] Proceeding with playback...")
-
-                // Build session URL
-                guard let sessionId = self.sessionId,
-                      let baseUrlString = startURL.absoluteString.components(separatedBy: "/video/").first,
-                      let token = URLComponents(string: startURL.absoluteString)?.queryItems?.first(where: { $0.name == "X-Plex-Token" })?.value else {
-                    throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to extract session info"])
-                }
-
-                let sessionURL = "\(baseUrlString)/video/:/transcode/universal/session/\(sessionId)/base/index.m3u8?X-Plex-Token=\(token)"
-                guard let url = URL(string: sessionURL) else {
-                    throw NSError(domain: "PlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid session URL"])
-                }
-
-                self.streamURL = url
-                print("✅ [Player] Using session URL: \(sessionURL)")
             } else {
+                // Direct Play
                 self.streamURL = startURL
                 print("✅ [Player] Stream URL ready: \(startURL.absoluteString)")
             }
@@ -637,6 +729,20 @@ class PlayerViewModel: ObservableObject {
 
         } catch {
             print("❌ [Player] Failed to load stream: \(error)")
+
+            // If transcoding failed, reset to Original quality
+            if selectedQuality != .original && isTranscoding {
+                print("⚠️ [Player] Transcoding failed - resetting to Original quality")
+                selectedQuality = .original
+                isTranscoding = false
+
+                // Retry with Direct Play
+                print("🔄 [Player] Retrying with Direct Play...")
+                self.error = nil
+                await loadStreamURL()
+                return
+            }
+
             self.error = "Failed to load video stream: \(error.localizedDescription)"
             self.isLoading = false
         }
@@ -788,22 +894,14 @@ class PlayerViewModel: ObservableObject {
             struct StreamResponse: Codable { let url: String }
             let response: StreamResponse = try await api.get(
                 "/api/plex/stream/\(ratingKey)",
-                queryItems: [
-                    URLQueryItem(name: "protocol", value: "hls"),
-                    URLQueryItem(name: "directPlay", value: "0"),
-                    URLQueryItem(name: "directStream", value: "0"),
-                    URLQueryItem(name: "autoAdjustQuality", value: "0"),
-                    URLQueryItem(name: "maxVideoBitrate", value: "20000"),
-                    URLQueryItem(name: "videoCodec", value: "h264"),
-                    URLQueryItem(name: "audioCodec", value: "aac"),
-                    URLQueryItem(name: "container", value: "mpegts")
-                ]
+                queryItems: buildTranscodeQueryItems(quality: selectedQuality)
             )
             guard let url = URL(string: response.url) else {
                 throw NSError(domain: "PlayerError", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid HLS URL"])
             }
             self.streamURL = url
             self.currentURLIsHLS = true
+            self.isTranscoding = selectedQuality.requiresTranscoding
 
             let asset = AVURLAsset(url: url)
             let item = AVPlayerItem(asset: asset)
@@ -954,17 +1052,71 @@ class PlayerViewModel: ObservableObject {
         print("⚡ [Player] Playback speed set to \(speed)x")
     }
 
-    func changeQuality(_ quality: String) {
-        selectedQuality = quality
-        let savedTime = currentTime
+    func changeQuality(_ newQuality: PlaybackQuality) {
+        print("🎚️ [Player] Changing quality: \(selectedQuality.rawValue) → \(newQuality.rawValue)")
+
+        // No change needed
+        guard newQuality != selectedQuality else {
+            print("   Already at \(newQuality.rawValue)")
+            return
+        }
+
+        isChangingQuality = true
+
+        // Check if we're switching TO a transcoded quality (not FROM)
+        let switchingToTranscode = newQuality.requiresTranscoding && !selectedQuality.requiresTranscoding
+        let savedTime = currentTime > 2 ? currentTime : 0
+
+        selectedQuality = newQuality
+        isTranscoding = newQuality.requiresTranscoding
 
         Task {
+            defer {
+                // Always reset changing quality flag
+                isChangingQuality = false
+            }
+
+            // Stop current playback
+            stopProgressTracking()
+
+            // Reload stream with new quality
             await loadStreamURL()
-            // Restore playback position
-            if savedTime > 0 {
+
+            // DASH supports seeking to any position (unlike HLS)
+            // MPV and DASH.js handle adaptive segment loading automatically
+            if savedTime > 2 {
+                // Wait for stream to initialize
+                let waitTime: UInt64 = isTranscoding ? 3_000_000_000 : 500_000_000 // 3s for DASH, 0.5s for Direct Play
+                try? await Task.sleep(nanoseconds: waitTime)
+
                 seek(to: savedTime)
+                print("⏩ [Player] Restored position: \(Int(savedTime))s")
             }
         }
+    }
+
+    // MARK: - Stream URL Building
+
+    /// Build query items for DASH transcoding based on selected quality
+    /// Backend expects "quality" and "resolution" params, which it converts to Plex params
+    private func buildTranscodeQueryItems(quality: PlaybackQuality) -> [URLQueryItem] {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "protocol", value: "dash"),  // Use DASH only (better seek support than HLS)
+            URLQueryItem(name: "directPlay", value: "0"),
+            URLQueryItem(name: "directStream", value: "0")
+        ]
+
+        // Backend expects "quality" (not "maxVideoBitrate") and "resolution" (not "videoResolution")
+        // The backend converts these to the proper Plex API params
+        if let bitrate = quality.bitrate {
+            queryItems.append(URLQueryItem(name: "quality", value: String(bitrate)))
+        }
+
+        if let resolution = quality.resolution {
+            queryItems.append(URLQueryItem(name: "resolution", value: resolution))
+        }
+
+        return queryItems
     }
 
     // MARK: - Track Management (MPV only)
@@ -1362,23 +1514,14 @@ class PlayerViewModel: ObservableObject {
 
     /// Retry with HLS transcoding as fallback (for MPV backend)
     private func retryWithHLS() async {
-        print("↩️ [Player] Falling back to HLS transcoding")
+        print("↩️ [Player] Falling back to HLS transcoding (quality: \(selectedQuality.rawValue))")
 
         do {
             let ratingKey = item.id.replacingOccurrences(of: "plex:", with: "")
             struct StreamResponse: Codable { let url: String }
             let response: StreamResponse = try await api.get(
                 "/api/plex/stream/\(ratingKey)",
-                queryItems: [
-                    URLQueryItem(name: "protocol", value: "hls"),
-                    URLQueryItem(name: "directPlay", value: "0"),
-                    URLQueryItem(name: "directStream", value: "0"),
-                    URLQueryItem(name: "autoAdjustQuality", value: "0"),
-                    URLQueryItem(name: "maxVideoBitrate", value: "20000"),
-                    URLQueryItem(name: "videoCodec", value: "h264"),
-                    URLQueryItem(name: "audioCodec", value: "aac"),
-                    URLQueryItem(name: "container", value: "mpegts")
-                ]
+                queryItems: buildTranscodeQueryItems(quality: selectedQuality)
             )
             guard let url = URL(string: response.url) else {
                 throw NSError(domain: "PlayerError", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid HLS URL"])
@@ -1386,6 +1529,7 @@ class PlayerViewModel: ObservableObject {
 
             self.streamURL = url
             self.currentURLIsHLS = true
+            self.isTranscoding = selectedQuality.requiresTranscoding
 
             // Handle session URL if needed (start.m3u8)
             var finalURL = url

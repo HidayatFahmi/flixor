@@ -622,9 +622,18 @@ router.get('/stream/:ratingKey',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const { ratingKey } = req.params;
+
+      // Accept both 'quality' and 'maxVideoBitrate' (macOS app uses maxVideoBitrate)
+      const quality = req.query.quality || req.query.maxVideoBitrate;
+      const resolution = req.query.resolution || req.query.videoResolution;
+
       const options = {
-        quality: req.query.quality,
-        resolution: req.query.resolution,
+        quality,
+        resolution,
+        protocol: req.query.protocol,
+        directPlay: req.query.directPlay,
+        directStream: req.query.directStream,
+        autoAdjustQuality: req.query.autoAdjustQuality,
         mediaIndex: req.query.mediaIndex,
         partIndex: req.query.partIndex,
         audioStreamID: req.query.audioStreamID,

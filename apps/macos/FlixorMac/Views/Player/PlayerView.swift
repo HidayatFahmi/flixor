@@ -58,9 +58,30 @@ struct PlayerView: View {
 
             // Loading Indicator
             if viewModel.isLoading {
-                ProgressView()
-                    .scaleEffect(1.5)
-                    .tint(.white)
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+
+                    // Show quality change message if applicable
+                    if viewModel.isChangingQuality {
+                        VStack(spacing: 4) {
+                            Text("Switching to \(viewModel.selectedQuality.rawValue)")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.white)
+
+                            if viewModel.isTranscoding {
+                                Text("Starting transcode...")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.white.opacity(0.7))
+                            } else {
+                                Text("Loading direct play...")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.white.opacity(0.7))
+                            }
+                        }
+                    }
+                }
             }
 
             // Error State
@@ -82,6 +103,7 @@ struct PlayerView: View {
 
                     HStack(spacing: 12) {
                         Button("Close") {
+                            viewModel.stopPlayback()
                             dismiss()
                         }
                         .buttonStyle(.bordered)
@@ -380,28 +402,70 @@ struct PlayerControlsView: View {
 
                 Spacer()
 
-                // Quality Selector (if available)
-                if !viewModel.availableQualities.isEmpty {
-                    Menu {
-                        ForEach(viewModel.availableQualities, id: \.self) { quality in
-                            Button(quality) {
-                                viewModel.changeQuality(quality)
+                // Quality Selector
+                Menu {
+                    ForEach(viewModel.availableQualities) { quality in
+                        Button(action: {
+                            viewModel.changeQuality(quality)
+                        }) {
+                            HStack(spacing: 8) {
+                                // Checkmark
+                                if quality == viewModel.selectedQuality {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.accentColor)
+                                        .frame(width: 12)
+                                } else {
+                                    Color.clear.frame(width: 12)
+                                }
+
+                                // Quality name
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(quality.rawValue)
+                                        .font(.system(size: 13, weight: quality == viewModel.selectedQuality ? .semibold : .regular))
+                                        .foregroundStyle(quality == viewModel.selectedQuality ? .white : .white.opacity(0.85))
+
+                                    // Description
+                                    if quality == .original {
+                                        Text("Direct Play • Best Quality")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.white.opacity(0.5))
+                                    } else {
+                                        Text("Transcoded • H.264")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.orange.opacity(0.7))
+                                    }
+                                }
+
+                                Spacer()
                             }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 4)
                         }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(viewModel.selectedQuality)
-                            Image(systemName: "chevron.down")
-                        }
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Capsule())
                     }
-                    .menuStyle(.borderlessButton)
+                } label: {
+                    HStack(spacing: 6) {
+                        // Quality text
+                        Text(viewModel.selectedQuality.rawValue)
+                            .font(.system(size: 14, weight: .medium))
+
+                        // Transcoding indicator badge
+                        if viewModel.isTranscoding {
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 6, height: 6)
+                        }
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(viewModel.isTranscoding ? Color.orange.opacity(0.2) : Color.black.opacity(0.5))
+                    .clipShape(Capsule())
                 }
+                .menuStyle(.borderlessButton)
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
