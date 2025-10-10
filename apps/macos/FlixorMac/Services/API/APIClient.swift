@@ -218,3 +218,35 @@ class APIClient: ObservableObject {
         return try await get("/api/auth/servers")
     }
 }
+
+// MARK: - Plex Markers (intro/credits)
+
+struct PlexMarkersEnvelope: Decodable {
+    let MediaContainer: PlexMarkersContainer?
+}
+
+struct PlexMarkersContainer: Decodable {
+    let Metadata: [PlexMarkersMetadata]?
+}
+
+struct PlexMarkersMetadata: Decodable {
+    let Marker: [PlexMarker]?
+}
+
+struct PlexMarker: Decodable {
+    let id: String?
+    let type: String?
+    let startTimeOffset: Int?
+    let endTimeOffset: Int?
+}
+
+extension APIClient {
+    /// Fetch Plex intro/credits markers for a ratingKey.
+    func getPlexMarkers(ratingKey: String) async throws -> [PlexMarker] {
+        let encoded = ratingKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ratingKey
+        let path = "/api/plex/dir/library/metadata/\(encoded)"
+        let env: PlexMarkersEnvelope = try await get(path, queryItems: [URLQueryItem(name: "includeMarkers", value: "1")])
+        let list = env.MediaContainer?.Metadata?.first?.Marker ?? []
+        return list
+    }
+}

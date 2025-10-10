@@ -8,13 +8,17 @@
 import SwiftUI
 import AVKit
 
+
 struct PlayerView: View {
     let item: MediaItem
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var router: NavigationRouter
     @StateObject private var viewModel: PlayerViewModel
     @State private var showControls = true
     @State private var hideControlsTask: Task<Void, Never>?
     @State private var isFullScreen = false
+    @State private var lastMousePosition: CGPoint = .zero
+    @State private var mouseMovementTimer: Timer?
     @AppStorage("playerBackend") private var selectedBackend: String = PlayerBackend.avplayer.rawValue
 
     private var playerBackend: PlayerBackend {
@@ -38,7 +42,7 @@ struct PlayerView: View {
                         VideoPlayerView(player: player)
                             .ignoresSafeArea()
                             .onTapGesture {
-                                toggleControls()
+                                viewModel.togglePlayPause()
                             }
                     }
                 case .mpv:
@@ -46,7 +50,7 @@ struct PlayerView: View {
                         MPVVideoView(mpvController: mpvController)
                             .ignoresSafeArea()
                             .onTapGesture {
-                                toggleControls()
+                                viewModel.togglePlayPause()
                             }
                     }
                 }
@@ -97,21 +101,104 @@ struct PlayerView: View {
                 )
                 .transition(.opacity)
             }
+
+            // Skip Intro/Credits Button - white pill, bottom-right; only for intro/credits
+            if let marker = viewModel.currentMarker, ["intro","credits"].contains(marker.type.lowercased()) {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            viewModel.skipMarker()
+                        }) {
+                            Text(marker.type.lowercased() == "intro" ? "SKIP INTRO" : "SKIP CREDITS")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 10)
+                                .background(Color.white)
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 32)
+                        .padding(.bottom, 96)
+                    }
+                }
+                .transition(.opacity)
+            }
+
+            // Next Episode Countdown (web style)
+            if let countdown = viewModel.nextEpisodeCountdown, let nextEp = viewModel.nextEpisode {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Up Next • Playing in \(countdown)s")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+
+                            Text(nextEp.title)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.9))
+                                .lineLimit(1)
+
+                            HStack(spacing: 8) {
+                                Button("Cancel") {
+                                    viewModel.cancelCountdown()
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.1))
+                                .foregroundStyle(.white)
+                                .cornerRadius(4)
+
+                                Button("Play Now") {
+                                    viewModel.playNext()
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.red)
+                                .foregroundStyle(.white)
+                                .cornerRadius(4)
+                            }
+                        }
+                        .padding(16)
+                        .background(Color.black.opacity(0.85))
+                        .cornerRadius(12)
+                        .shadow(radius: 20)
+                        .padding(.trailing, 32)
+                        .padding(.bottom, 140)
+                    }
+                }
+                .transition(.opacity)
+            }
         }
         .onAppear {
+            showControls = true
             scheduleHideControls()
+            startMouseTracking()
+
+            // Setup navigation callback for next episode
+            viewModel.onPlayNext = { [weak router] nextItem in
+                // Dismiss current player
+                dismiss()
+                // Small delay to ensure dismiss completes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // Navigate to next episode
+                    router?.path.append(nextItem)
+                }
+            }
         }
         .onDisappear {
             viewModel.onDisappear()
+            stopMouseTracking()
             // Exit fullscreen when leaving player
             if isFullScreen {
                 toggleFullScreen()
-            }
-        }
-        .onHover { hovering in
-            if hovering {
-                showControls = true
-                scheduleHideControls()
             }
         }
     }
@@ -125,19 +212,44 @@ struct PlayerView: View {
         #endif
     }
 
-    private func toggleControls() {
+    private func startMouseTracking() {
+        #if os(macOS)
+        // Start a timer that checks mouse position periodically
+        mouseMovementTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [self] _ in
+            if let window = NSApp.keyWindow,
+               let contentView = window.contentView {
+                let mouseLocation = NSEvent.mouseLocation
+                let windowLocation = window.convertPoint(fromScreen: NSPoint(x: mouseLocation.x, y: mouseLocation.y))
+                let viewLocation = contentView.convert(windowLocation, from: nil)
+
+                // Check if mouse position changed
+                if viewLocation.x != lastMousePosition.x || viewLocation.y != lastMousePosition.y {
+                    lastMousePosition = viewLocation
+                    onMouseMoved()
+                }
+            }
+        }
+        #endif
+    }
+
+    private func stopMouseTracking() {
+        mouseMovementTimer?.invalidate()
+        mouseMovementTimer = nil
+    }
+
+    private func onMouseMoved() {
+        // Show controls on mouse movement
         withAnimation(.easeInOut(duration: 0.2)) {
-            showControls.toggle()
+            showControls = true
         }
-        if showControls {
-            scheduleHideControls()
-        }
+        // Restart the hide timer
+        scheduleHideControls()
     }
 
     private func scheduleHideControls() {
         hideControlsTask?.cancel()
         hideControlsTask = Task {
-            try? await Task.sleep(nanoseconds: 4_000_000_000) // 4 seconds
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds of inactivity
             if !Task.isCancelled && viewModel.isPlaying {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showControls = false
@@ -211,6 +323,21 @@ struct PlayerControlsView: View {
 
     @State private var isDraggingTimeline = false
     @State private var draggedTime: TimeInterval = 0
+    @State private var showEpisodesList = false
+    @State private var showPlaybackSpeed = false
+    @State private var showVolumeSlider = false
+
+    // Hover states for all control buttons
+    @State private var isBackHovered = false
+    @State private var isPlayPauseHovered = false
+    @State private var isSkipBackHovered = false
+    @State private var isSkipForwardHovered = false
+    @State private var isVolumeButtonHovered = false
+    @State private var isNextEpisodeHovered = false
+    @State private var showNextEpisodeHover = false
+    @State private var isEpisodeListHovered = false
+    @State private var isSpeedHovered = false
+    @State private var isFullscreenHovered = false
 
     var body: some View {
         VStack {
@@ -223,8 +350,14 @@ struct PlayerControlsView: View {
                         .frame(width: 40, height: 40)
                         .background(Color.black.opacity(0.5))
                         .clipShape(Circle())
+                        .scaleEffect(isBackHovered ? 1.1 : 1.0)
                 }
                 .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isBackHovered = hovering
+                    }
+                }
 
                 Spacer()
 
@@ -275,12 +408,12 @@ struct PlayerControlsView: View {
 
                             // Progress
                             Rectangle()
-                                .fill(Color.white)
+                                .fill(Color.accentColor)
                                 .frame(width: geometry.size.width * CGFloat(currentProgress), height: 4)
 
                             // Scrubber
                             Circle()
-                                .fill(Color.white)
+                                .fill(Color.accentColor)
                                 .frame(width: 12, height: 12)
                                 .offset(x: geometry.size.width * CGFloat(currentProgress) - 6)
                         }
@@ -314,60 +447,165 @@ struct PlayerControlsView: View {
 
                 // Play/Pause & Volume
                 HStack(spacing: 20) {
+                    // Play/Pause (first)
+                    Button(action: { viewModel.togglePlayPause() }) {
+                        if viewModel.isPlaying {
+                            PauseIcon()
+                                .frame(width: 40, height: 40)
+                                .foregroundStyle(.white)
+                        } else {
+                            PlayIcon()
+                                .frame(width: 40, height: 40)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .scaleEffect(isPlayPauseHovered ? 1.1 : 1.0)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isPlayPauseHovered = hovering
+                        }
+                    }
+
                     // Skip back
                     Button(action: { viewModel.skip(seconds: -10) }) {
-                        Image(systemName: "gobackward.10")
-                            .font(.system(size: 24))
+                        Replay10Icon()
+                            .frame(width: 32, height: 32)
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
-
-                    // Play/Pause
-                    Button(action: { viewModel.togglePlayPause() }) {
-                        Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.white)
-                            .frame(width: 56, height: 56)
-                            .background(Color.white.opacity(0.2))
-                            .clipShape(Circle())
+                    .scaleEffect(isSkipBackHovered ? 1.1 : 1.0)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSkipBackHovered = hovering
+                        }
                     }
-                    .buttonStyle(.plain)
 
                     // Skip forward
                     Button(action: { viewModel.skip(seconds: 10) }) {
-                        Image(systemName: "goforward.10")
-                            .font(.system(size: 24))
+                        Forward10Icon()
+                            .frame(width: 32, height: 32)
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
+                    .scaleEffect(isSkipForwardHovered ? 1.1 : 1.0)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSkipForwardHovered = hovering
+                        }
+                    }
 
-                    Spacer()
-
-                    // Volume
-                    HStack(spacing: 8) {
-                        Button(action: { viewModel.toggleMute() }) {
-                            Image(systemName: viewModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                .font(.system(size: 16))
+                    // Volume control
+                    HStack(spacing: 0) {
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showVolumeSlider.toggle()
+                            }
+                        }) {
+                            VolumeIcon(volume: viewModel.volume, isMuted: viewModel.isMuted)
+                                .frame(width: 32, height: 32)
                                 .foregroundStyle(.white)
                         }
                         .buttonStyle(.plain)
+                        .scaleEffect(isVolumeButtonHovered ? 1.1 : 1.0)
+                        .onHover { hovering in
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isVolumeButtonHovered = hovering
+                            }
+                        }
 
-                        Slider(value: Binding(
-                            get: { viewModel.volume },
-                            set: { viewModel.setVolume($0) }
-                        ), in: 0...1)
-                        .frame(width: 100)
-                        .tint(.white)
+                        if showVolumeSlider {
+                            VolumeSliderPopover(
+                                volume: Binding(
+                                    get: { viewModel.volume },
+                                    set: { viewModel.setVolume($0) }
+                                ),
+                                isMuted: viewModel.isMuted
+                            )
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .move(edge: .leading)),
+                                removal: .opacity
+                            ))
+                        }
                     }
+
+                    Spacer()
+
+                    // Episode controls (next episode & episodes list) - only for TV shows
+                    if viewModel.item.type == "episode" {
+                        // Next Episode button
+                        if let nextEp = viewModel.nextEpisode {
+                            Button(action: {
+                                viewModel.playNext()
+                            }) {
+                                NextEpisodeIcon()
+                                    .frame(width: 32, height: 32)
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                            .scaleEffect(isNextEpisodeHovered ? 1.1 : 1.0)
+                            .onHover { hovering in
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isNextEpisodeHovered = hovering
+                                    showNextEpisodeHover = hovering
+                                }
+                            }
+                            .help("Next Episode: \(nextEp.title)")
+                        }
+                        // Episodes list button
+                        Button(action: {
+                            showEpisodesList.toggle()
+                        }) {
+                            EpisodeListIcon()
+                                .frame(width: 32, height: 32)
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                        .scaleEffect(isEpisodeListHovered ? 1.1 : 1.0)
+                        .onHover { hovering in
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isEpisodeListHovered = hovering
+                            }
+                        }
+                        .help("Episodes")
+                    }
+
+                    // Playback speed button
+                    Button(action: {
+                        showPlaybackSpeed.toggle()
+                    }) {
+                        PlaybackSpeedIcon()
+                            .frame(width: 32, height: 32)
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .scaleEffect(isSpeedHovered ? 1.1 : 1.0)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSpeedHovered = hovering
+                        }
+                    }
+                    .help("Playback Speed")
 
                     // Fullscreen button
                     Button(action: onToggleFullScreen) {
-                        Image(systemName: isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
+                        if isFullScreen {
+                            FullscreenExitIcon()
+                                .frame(width: 32, height: 32)
+                                .foregroundStyle(.white)
+                        } else {
+                            FullscreenEnterIcon()
+                                .frame(width: 32, height: 32)
+                                .foregroundStyle(.white)
+                        }
                     }
                     .buttonStyle(.plain)
+                    .scaleEffect(isFullscreenHovered ? 1.1 : 1.0)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isFullscreenHovered = hovering
+                        }
+                    }
                 }
                 .padding(.horizontal, 20)
             }
@@ -390,6 +628,65 @@ struct PlayerControlsView: View {
             .frame(height: 120)
             .frame(maxHeight: .infinity, alignment: .top)
         )
+        .overlay(alignment: .trailing) {
+            if showEpisodesList && !viewModel.seasonEpisodes.isEmpty {
+                EpisodesListPanel(
+                    episodes: viewModel.seasonEpisodes,
+                    currentEpisodeKey: viewModel.item.id.replacingOccurrences(of: "plex:", with: ""),
+                    onSelectEpisode: { episode in
+                        // Create MediaItem and navigate
+                        let episodeItem = MediaItem(
+                            id: "plex:\(episode.ratingKey)",
+                            title: episode.title,
+                            type: "episode",
+                            thumb: episode.thumb,
+                            art: nil,
+                            year: nil,
+                            rating: nil,
+                            duration: nil,
+                            viewOffset: nil,
+                            summary: episode.summary,
+                            grandparentTitle: viewModel.item.grandparentTitle,
+                            grandparentThumb: viewModel.item.grandparentThumb,
+                            grandparentArt: viewModel.item.grandparentArt,
+                            parentIndex: episode.parentIndex,
+                            index: episode.index
+                        )
+                        showEpisodesList = false
+                        viewModel.stopPlayback()
+                        viewModel.onPlayNext?(episodeItem)
+                    },
+                    onClose: {
+                        showEpisodesList = false
+                    }
+                )
+                .transition(.move(edge: .trailing))
+            }
+        }
+        .overlay {
+            if showPlaybackSpeed {
+                PlaybackSpeedModal(
+                    currentSpeed: viewModel.playbackSpeed,
+                    onSelectSpeed: { speed in
+                        viewModel.setPlaybackSpeed(speed)
+                        showPlaybackSpeed = false
+                    },
+                    onClose: {
+                        showPlaybackSpeed = false
+                    }
+                )
+                .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            // Next Episode Hover Card - positioned independently
+            if showNextEpisodeHover, let nextEp = viewModel.nextEpisode {
+                NextEpisodeHoverCard(episode: nextEp, viewModel: viewModel)
+                    .padding(.trailing, 120)
+                    .padding(.bottom, 80)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
     }
 
     private var currentProgress: Double {
@@ -413,6 +710,818 @@ struct PlayerControlsView: View {
     }
 }
 
+// MARK: - Episodes List Panel
+
+struct EpisodesListPanel: View {
+    let episodes: [EpisodeMetadata]
+    let currentEpisodeKey: String
+    let onSelectEpisode: (EpisodeMetadata) -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("Episodes")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(Color.black.opacity(0.9))
+
+            Divider()
+                .background(Color.white.opacity(0.2))
+
+            // Episodes List
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(episodes) { episode in
+                        PlayerEpisodeRow(
+                            episode: episode,
+                            isCurrentEpisode: episode.ratingKey == currentEpisodeKey,
+                            onSelect: { onSelectEpisode(episode) }
+                        )
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+            }
+        }
+        .frame(width: 450)
+        .background(Color.black.opacity(0.95))
+        .clipShape(RoundedRectangle(cornerRadius: 0))
+    }
+}
+
+// MARK: - Playback Speed Modal
+
+private struct PlaybackSpeedModal: View {
+    let currentSpeed: Float
+    let onSelectSpeed: (Float) -> Void
+    let onClose: () -> Void
+
+    private let speeds: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5]
+    @State private var isDragging = false
+    @State private var dragSpeed: Float?
+
+    private var displaySpeed: Float {
+        isDragging ? (dragSpeed ?? currentSpeed) : currentSpeed
+    }
+
+    private var currentIndex: Int {
+        speeds.firstIndex(of: currentSpeed) ?? 2
+    }
+
+    private var activeIndex: Int {
+        if isDragging, let ds = dragSpeed {
+            return speeds.firstIndex(of: ds) ?? currentIndex
+        }
+        return currentIndex
+    }
+
+    var body: some View {
+        ZStack {
+            // Semi-transparent background
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    onClose()
+                }
+
+            // Speed selector card - positioned bottom-right
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+
+                    speedSelectorCard
+                }
+            }
+        }
+    }
+
+    private var speedSelectorCard: some View {
+        VStack(spacing: 0) {
+            // Title
+            Text("Playback Speed")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.top, 24)
+                .padding(.bottom, 20)
+
+            speedSlider
+                .padding(.bottom, 24)
+        }
+        .frame(width: 600, height: 240)
+        .background(Color.black.opacity(0.95))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.trailing, 32)
+        .padding(.bottom, 140)
+    }
+
+    private var speedSlider: some View {
+        VStack(spacing: 16) {
+            // Current speed display
+            Text(String(format: "%.2fx", displaySpeed))
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(.white)
+
+            if abs(displaySpeed - 1.0) < 0.01 {
+                Text("Normal")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+
+            // Draggable slider track
+            GeometryReader { geometry in
+                draggableTrack(width: geometry.size.width)
+            }
+            .frame(height: 28)
+            .padding(.horizontal, 40)
+
+            // Speed labels
+            speedLabels
+                .padding(.horizontal, 40)
+        }
+    }
+
+    private func draggableTrack(width: CGFloat) -> some View {
+        let trackWidth = width
+        let progressWidth = trackWidth * CGFloat(activeIndex) / CGFloat(speeds.count - 1)
+        let thumbPosition = trackWidth * CGFloat(activeIndex) / CGFloat(speeds.count - 1)
+
+        return ZStack(alignment: .leading) {
+            // Background track
+            backgroundTrack
+
+            // Progress fill
+            progressFill(width: progressWidth)
+
+            // Speed markers
+            speedMarkers(trackWidth: trackWidth)
+
+            // Draggable thumb
+            thumb(position: thumbPosition)
+        }
+        .frame(height: 28)
+        .gesture(dragGesture(trackWidth: trackWidth))
+    }
+
+    private var backgroundTrack: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.2))
+            .frame(height: 4)
+            .cornerRadius(2)
+    }
+
+    private func progressFill(width: CGFloat) -> some View {
+        Rectangle()
+            .fill(Color.white)
+            .frame(width: width, height: 4)
+            .cornerRadius(2)
+    }
+
+    private func speedMarkers(trackWidth: CGFloat) -> some View {
+        ForEach(Array(speeds.enumerated()), id: \.offset) { index, _ in
+            let xPosition = trackWidth * CGFloat(index) / CGFloat(speeds.count - 1)
+            Circle()
+                .fill(index <= activeIndex ? Color.white : Color.white.opacity(0.3))
+                .frame(width: 16, height: 16)
+                .offset(x: xPosition - 8)
+        }
+    }
+
+    private func thumb(position: CGFloat) -> some View {
+        Circle()
+            .strokeBorder(Color.white.opacity(0.8), lineWidth: 3)
+            .background(Circle().fill(Color.white))
+            .frame(width: 28, height: 28)
+            .offset(x: position - 14)
+            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+    }
+
+    private func dragGesture(trackWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                isDragging = true
+                let progress = min(max(0, value.location.x / trackWidth), 1)
+                let index = Int(round(progress * CGFloat(speeds.count - 1)))
+                dragSpeed = speeds[index]
+            }
+            .onEnded { _ in
+                isDragging = false
+                if let selectedSpeed = dragSpeed {
+                    onSelectSpeed(selectedSpeed)
+                }
+                dragSpeed = nil
+            }
+    }
+
+    private var speedLabels: some View {
+        HStack {
+            ForEach(speeds, id: \.self) { speed in
+                Text(String(format: "%.2gx", speed))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+}
+
+// MARK: - Custom PNG Icons
+
+private struct PlayIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "play") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "play.fill")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct PauseIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "pause") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "pause.fill")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct Replay10Icon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "replay10") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "gobackward.10")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct Forward10Icon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "forward10") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "goforward.10")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct NextEpisodeIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "next-episode") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "forward.end.fill")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct EpisodeListIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "episode-list") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "list.bullet")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct FullscreenEnterIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "fullscreen-enter") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct FullscreenExitIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "fullscreen-exit") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+private struct PlaybackSpeedIcon: View {
+    var body: some View {
+        if let nsImage = NSImage(named: "playback-speed") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .renderingMode(.template)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "gauge")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+// MARK: - Volume Components
+
+private struct VolumeIcon: View {
+    let volume: Float
+    let isMuted: Bool
+
+    var body: some View {
+        let level: VolumeLevel = isMuted || volume == 0 ? .off : volume <= 0.33 ? .low : volume <= 0.66 ? .medium : .high
+
+        GeometryReader { geometry in
+            Path { path in
+                switch level {
+                case .off:
+                    // Volume off with X
+                    path.addPath(volumeOffPath(in: geometry.size))
+                case .low:
+                    // Low volume - one wave
+                    path.addPath(volumeLowPath(in: geometry.size))
+                case .medium:
+                    // Medium volume - two waves
+                    path.addPath(volumeMediumPath(in: geometry.size))
+                case .high:
+                    // High volume - three waves
+                    path.addPath(volumeHighPath(in: geometry.size))
+                }
+            }
+            .fill(Color.white)
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+
+    enum VolumeLevel {
+        case off, low, medium, high
+    }
+
+    private func volumeOffPath(in size: CGSize) -> Path {
+        let scale = size.width / 24
+        var path = Path()
+        // Speaker base
+        path.move(to: CGPoint(x: 11 * scale, y: 4 * scale))
+        path.addLine(to: CGPoint(x: 11 * scale, y: 20 * scale))
+        path.addLine(to: CGPoint(x: 4.586 * scale, y: 16 * scale))
+        path.addLine(to: CGPoint(x: 1 * scale, y: 16 * scale))
+        path.addLine(to: CGPoint(x: 1 * scale, y: 8 * scale))
+        path.addLine(to: CGPoint(x: 4.586 * scale, y: 8 * scale))
+        path.closeSubpath()
+        // X mark
+        path.move(to: CGPoint(x: 15.293 * scale, y: 9.707 * scale))
+        path.addLine(to: CGPoint(x: 17.586 * scale, y: 12 * scale))
+        path.addLine(to: CGPoint(x: 15.293 * scale, y: 14.293 * scale))
+        path.addLine(to: CGPoint(x: 16.707 * scale, y: 15.707 * scale))
+        path.addLine(to: CGPoint(x: 19 * scale, y: 13.414 * scale))
+        path.addLine(to: CGPoint(x: 21.293 * scale, y: 15.707 * scale))
+        path.addLine(to: CGPoint(x: 22.707 * scale, y: 14.293 * scale))
+        path.addLine(to: CGPoint(x: 20.414 * scale, y: 12 * scale))
+        path.addLine(to: CGPoint(x: 22.707 * scale, y: 9.707 * scale))
+        path.addLine(to: CGPoint(x: 21.293 * scale, y: 8.293 * scale))
+        path.addLine(to: CGPoint(x: 19 * scale, y: 10.586 * scale))
+        path.addLine(to: CGPoint(x: 16.707 * scale, y: 8.293 * scale))
+        path.closeSubpath()
+        return path
+    }
+
+    private func volumeLowPath(in size: CGSize) -> Path {
+        let scale = size.width / 24
+        var path = Path()
+        // Speaker base
+        path.move(to: CGPoint(x: 11 * scale, y: 4 * scale))
+        path.addLine(to: CGPoint(x: 11 * scale, y: 20 * scale))
+        path.addLine(to: CGPoint(x: 4.586 * scale, y: 16 * scale))
+        path.addLine(to: CGPoint(x: 1 * scale, y: 16 * scale))
+        path.addLine(to: CGPoint(x: 1 * scale, y: 8 * scale))
+        path.addLine(to: CGPoint(x: 4.586 * scale, y: 8 * scale))
+        path.closeSubpath()
+        // One wave
+        path.move(to: CGPoint(x: 14.243 * scale, y: 7.757 * scale))
+        path.addLine(to: CGPoint(x: 12.828 * scale, y: 9.172 * scale))
+        path.addCurve(to: CGPoint(x: 14 * scale, y: 12 * scale), control1: CGPoint(x: 13.579 * scale, y: 9.922 * scale), control2: CGPoint(x: 14 * scale, y: 10.939 * scale))
+        path.addCurve(to: CGPoint(x: 12.828 * scale, y: 14.828 * scale), control1: CGPoint(x: 14 * scale, y: 13.061 * scale), control2: CGPoint(x: 13.579 * scale, y: 14.078 * scale))
+        path.addLine(to: CGPoint(x: 14.243 * scale, y: 16.243 * scale))
+        path.addCurve(to: CGPoint(x: 16 * scale, y: 12 * scale), control1: CGPoint(x: 15.368 * scale, y: 15.118 * scale), control2: CGPoint(x: 16 * scale, y: 13.591 * scale))
+        path.addCurve(to: CGPoint(x: 14.243 * scale, y: 7.757 * scale), control1: CGPoint(x: 16 * scale, y: 10.409 * scale), control2: CGPoint(x: 15.368 * scale, y: 8.882 * scale))
+        path.closeSubpath()
+        return path
+    }
+
+    private func volumeMediumPath(in size: CGSize) -> Path {
+        let scale = size.width / 24
+        var path = Path()
+        // Speaker base
+        path.move(to: CGPoint(x: 11 * scale, y: 4 * scale))
+        path.addLine(to: CGPoint(x: 11 * scale, y: 20 * scale))
+        path.addLine(to: CGPoint(x: 4.586 * scale, y: 16 * scale))
+        path.addLine(to: CGPoint(x: 1 * scale, y: 16 * scale))
+        path.addLine(to: CGPoint(x: 1 * scale, y: 8 * scale))
+        path.addLine(to: CGPoint(x: 4.586 * scale, y: 8 * scale))
+        path.closeSubpath()
+        // Two waves
+        path.move(to: CGPoint(x: 17.071 * scale, y: 4.929 * scale))
+        path.addLine(to: CGPoint(x: 15.657 * scale, y: 6.343 * scale))
+        path.addCurve(to: CGPoint(x: 18 * scale, y: 12 * scale), control1: CGPoint(x: 17.157 * scale, y: 7.844 * scale), control2: CGPoint(x: 18 * scale, y: 9.878 * scale))
+        path.addCurve(to: CGPoint(x: 15.657 * scale, y: 17.657 * scale), control1: CGPoint(x: 18 * scale, y: 14.122 * scale), control2: CGPoint(x: 17.157 * scale, y: 16.156 * scale))
+        path.addLine(to: CGPoint(x: 17.071 * scale, y: 19.071 * scale))
+        path.addCurve(to: CGPoint(x: 20 * scale, y: 12 * scale), control1: CGPoint(x: 18.946 * scale, y: 17.195 * scale), control2: CGPoint(x: 20 * scale, y: 14.652 * scale))
+        path.addCurve(to: CGPoint(x: 17.071 * scale, y: 4.929 * scale), control1: CGPoint(x: 20 * scale, y: 9.348 * scale), control2: CGPoint(x: 18.946 * scale, y: 6.805 * scale))
+        path.closeSubpath()
+        path.move(to: CGPoint(x: 14.243 * scale, y: 7.757 * scale))
+        path.addLine(to: CGPoint(x: 12.828 * scale, y: 9.172 * scale))
+        path.addCurve(to: CGPoint(x: 14 * scale, y: 12 * scale), control1: CGPoint(x: 13.579 * scale, y: 9.922 * scale), control2: CGPoint(x: 14 * scale, y: 10.939 * scale))
+        path.addCurve(to: CGPoint(x: 12.828 * scale, y: 14.828 * scale), control1: CGPoint(x: 14 * scale, y: 13.061 * scale), control2: CGPoint(x: 13.579 * scale, y: 14.078 * scale))
+        path.addLine(to: CGPoint(x: 14.243 * scale, y: 16.243 * scale))
+        path.addCurve(to: CGPoint(x: 16 * scale, y: 12 * scale), control1: CGPoint(x: 15.368 * scale, y: 15.118 * scale), control2: CGPoint(x: 16 * scale, y: 13.591 * scale))
+        path.addCurve(to: CGPoint(x: 14.243 * scale, y: 7.757 * scale), control1: CGPoint(x: 16 * scale, y: 10.409 * scale), control2: CGPoint(x: 15.368 * scale, y: 8.882 * scale))
+        path.closeSubpath()
+        return path
+    }
+
+    private func volumeHighPath(in size: CGSize) -> Path {
+        let scale = size.width / 24
+        var path = Path()
+        // Speaker base
+        path.move(to: CGPoint(x: 11 * scale, y: 4 * scale))
+        path.addLine(to: CGPoint(x: 11 * scale, y: 20 * scale))
+        path.addLine(to: CGPoint(x: 4.586 * scale, y: 16 * scale))
+        path.addLine(to: CGPoint(x: 1 * scale, y: 16 * scale))
+        path.addLine(to: CGPoint(x: 1 * scale, y: 8 * scale))
+        path.addLine(to: CGPoint(x: 4.586 * scale, y: 8 * scale))
+        path.closeSubpath()
+        // Three waves
+        path.move(to: CGPoint(x: 19.9 * scale, y: 2.1 * scale))
+        path.addLine(to: CGPoint(x: 18.485 * scale, y: 3.515 * scale))
+        path.addCurve(to: CGPoint(x: 22 * scale, y: 12 * scale), control1: CGPoint(x: 20.736 * scale, y: 5.765 * scale), control2: CGPoint(x: 22 * scale, y: 8.817 * scale))
+        path.addCurve(to: CGPoint(x: 18.485 * scale, y: 20.485 * scale), control1: CGPoint(x: 22 * scale, y: 15.183 * scale), control2: CGPoint(x: 20.736 * scale, y: 18.235 * scale))
+        path.addLine(to: CGPoint(x: 19.9 * scale, y: 21.9 * scale))
+        path.addCurve(to: CGPoint(x: 24 * scale, y: 12 * scale), control1: CGPoint(x: 22.525 * scale, y: 19.274 * scale), control2: CGPoint(x: 24 * scale, y: 15.713 * scale))
+        path.addCurve(to: CGPoint(x: 19.9 * scale, y: 2.1 * scale), control1: CGPoint(x: 24 * scale, y: 8.287 * scale), control2: CGPoint(x: 22.525 * scale, y: 4.726 * scale))
+        path.closeSubpath()
+        path.move(to: CGPoint(x: 17.071 * scale, y: 4.929 * scale))
+        path.addLine(to: CGPoint(x: 15.657 * scale, y: 6.343 * scale))
+        path.addCurve(to: CGPoint(x: 18 * scale, y: 12 * scale), control1: CGPoint(x: 17.157 * scale, y: 7.844 * scale), control2: CGPoint(x: 18 * scale, y: 9.878 * scale))
+        path.addCurve(to: CGPoint(x: 15.657 * scale, y: 17.657 * scale), control1: CGPoint(x: 18 * scale, y: 14.122 * scale), control2: CGPoint(x: 17.157 * scale, y: 16.156 * scale))
+        path.addLine(to: CGPoint(x: 17.071 * scale, y: 19.071 * scale))
+        path.addCurve(to: CGPoint(x: 20 * scale, y: 12 * scale), control1: CGPoint(x: 18.946 * scale, y: 17.195 * scale), control2: CGPoint(x: 20 * scale, y: 14.652 * scale))
+        path.addCurve(to: CGPoint(x: 17.071 * scale, y: 4.929 * scale), control1: CGPoint(x: 20 * scale, y: 9.348 * scale), control2: CGPoint(x: 18.946 * scale, y: 6.805 * scale))
+        path.closeSubpath()
+        path.move(to: CGPoint(x: 14.243 * scale, y: 7.757 * scale))
+        path.addLine(to: CGPoint(x: 12.828 * scale, y: 9.172 * scale))
+        path.addCurve(to: CGPoint(x: 14 * scale, y: 12 * scale), control1: CGPoint(x: 13.579 * scale, y: 9.922 * scale), control2: CGPoint(x: 14 * scale, y: 10.939 * scale))
+        path.addCurve(to: CGPoint(x: 12.828 * scale, y: 14.828 * scale), control1: CGPoint(x: 14 * scale, y: 13.061 * scale), control2: CGPoint(x: 13.579 * scale, y: 14.078 * scale))
+        path.addLine(to: CGPoint(x: 14.243 * scale, y: 16.243 * scale))
+        path.addCurve(to: CGPoint(x: 16 * scale, y: 12 * scale), control1: CGPoint(x: 15.368 * scale, y: 15.118 * scale), control2: CGPoint(x: 16 * scale, y: 13.591 * scale))
+        path.addCurve(to: CGPoint(x: 14.243 * scale, y: 7.757 * scale), control1: CGPoint(x: 16 * scale, y: 10.409 * scale), control2: CGPoint(x: 15.368 * scale, y: 8.882 * scale))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct VolumeSliderPopover: View {
+    @Binding var volume: Float
+    let isMuted: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Volume icon in popover
+            VolumeIcon(volume: volume, isMuted: isMuted)
+                .frame(width: 20, height: 20)
+                .foregroundStyle(.white)
+
+            // Slider
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Background track
+                    Rectangle()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(height: 6)
+                        .cornerRadius(3)
+
+                    // Progress fill with red gradient
+                    LinearGradient(
+                        colors: [Color(red: 0.898, green: 0.035, blue: 0.078), Color(red: 0.9, green: 0.035, blue: 0.078)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: geometry.size.width * CGFloat(volume), height: 6)
+                    .cornerRadius(3)
+
+                    // Thumb
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.6), lineWidth: 4)
+                        .background(Circle().fill(Color.white))
+                        .frame(width: 20, height: 20)
+                        .offset(x: geometry.size.width * CGFloat(volume) - 10)
+                }
+                .frame(height: 6)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let newVolume = Float(min(max(0, value.location.x / geometry.size.width), 1))
+                            volume = newVolume
+                        }
+                )
+            }
+            .frame(height: 20)
+
+            // Percentage display
+            Text("\(Int(volume * 100))%")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 38, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(width: 288)
+        .background(Color.black.opacity(0.9))
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
+        .padding(.leading, 12)
+    }
+}
+
+// MARK: - Player Episode Row Component
+private struct PlayerEpisodeRow: View {
+    let episode: EpisodeMetadata
+    let isCurrentEpisode: Bool
+    let onSelect: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Episode thumbnail with progress bar and hover overlay
+                ZStack {
+                    // Thumbnail image or number badge fallback
+                    if let thumbPath = episode.thumb,
+                       let imageURL = ImageService.shared.plexImageURL(path: thumbPath, width: 320, height: 180) {
+                        CachedAsyncImage(url: imageURL)
+                            .frame(width: 160, height: 90)
+                    } else if let index = episode.index {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(isCurrentEpisode ? Color.orange.opacity(0.2) : Color.white.opacity(0.1))
+                            .frame(width: 160, height: 90)
+                            .overlay(
+                                Text("\(index)")
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            )
+                    }
+
+                    // Hover overlay
+                    if isHovered {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.25))
+                            .frame(width: 160, height: 90)
+
+                        // Play button
+                        Text("Play")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.white)
+                            .clipShape(Capsule())
+                    }
+
+                    // Progress bar (matching web implementation)
+                    // Don't show progress bar for currently playing episode
+                    if !isCurrentEpisode, let progress = episode.progressPercent, progress > 0 {
+                        VStack {
+                            Spacer()
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    Rectangle()
+                                        .fill(Color.white.opacity(0.2))
+                                        .frame(height: 6)
+
+                                    Rectangle()
+                                        .fill(Color(red: 229/255, green: 9/255, blue: 20/255))
+                                        .frame(width: geometry.size.width * CGFloat(min(100, max(0, progress))) / 100.0, height: 6)
+                                }
+                            }
+                            .frame(height: 6)
+                        }
+                    }
+                }
+                .frame(width: 160, height: 90)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                // Episode info
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text(episode.title)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+
+                        // Current indicator
+                        if isCurrentEpisode {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    // Duration
+                    if let duration = episode.duration {
+                        Text("\(duration / 60000) min")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+
+                    if let summary = episode.summary {
+                        Text(summary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(2)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isCurrentEpisode ? Color.white.opacity(0.05) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+    }
+}
+
+// MARK: - Next Episode Hover Card
+
+private struct NextEpisodeHoverCard: View {
+    let episode: EpisodeMetadata
+    @ObservedObject var viewModel: PlayerViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            Text("Next Episode")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.05))
+
+            // Content grid
+            HStack(spacing: 12) {
+                // Episode thumbnail with play icon overlay
+                ZStack {
+                    // Thumbnail
+                    if let thumbPath = episode.thumb,
+                       let imageURL = ImageService.shared.plexImageURL(path: thumbPath, width: 320, height: 180) {
+                        CachedAsyncImage(url: imageURL)
+                            .frame(width: 180, height: 100)
+                            .background(Color.black.opacity(0.4))
+                    } else {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.4))
+                            .frame(width: 180, height: 100)
+                    }
+
+                    // Play icon overlay
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.5))
+                            .frame(width: 40, height: 40)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                            )
+
+                        // Play icon
+                        Path { path in
+                            let scale: CGFloat = 1.6
+                            path.move(to: CGPoint(x: 5 * scale, y: 2.69127 * scale))
+                            path.addCurve(
+                                to: CGPoint(x: 5 * scale, y: 21.3087 * scale),
+                                control1: CGPoint(x: 5 * scale, y: 1.93067 * scale),
+                                control2: CGPoint(x: 5 * scale, y: 22.0693 * scale)
+                            )
+                            path.addCurve(
+                                to: CGPoint(x: 23.4069 * scale, y: 12.8762 * scale),
+                                control1: CGPoint(x: 5.81546 * scale, y: 22.5515 * scale),
+                                control2: CGPoint(x: 24.0977 * scale, y: 12.4963 * scale)
+                            )
+                            path.addLine(to: CGPoint(x: 6.48192 * scale, y: 1.81506 * scale))
+                            path.closeSubpath()
+                        }
+                        .fill(Color.white)
+                        .frame(width: 24, height: 24)
+                    }
+                }
+                .frame(width: 180, height: 100)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                // Episode info
+                VStack(alignment: .leading, spacing: 4) {
+                    // Season and Episode number (compact)
+                    if let parentIndex = episode.parentIndex, let index = episode.index {
+                        Text("\(parentIndex) Episode \(index)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+
+                    // Episode title
+                    Text(episode.title)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    // Episode summary
+                    if let summary = episode.summary {
+                        Text(summary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .lineSpacing(2)
+                            .lineLimit(3)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+        }
+        .frame(width: 440)
+        .background(Color.black.opacity(0.9))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
+    }
+}
+
 #Preview {
     PlayerView(item: MediaItem(
         id: "plex:1",
@@ -432,4 +1541,3 @@ struct PlayerControlsView: View {
         index: nil
     ))
 }
-

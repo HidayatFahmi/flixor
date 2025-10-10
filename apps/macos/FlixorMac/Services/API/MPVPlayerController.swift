@@ -260,6 +260,10 @@ class MPVPlayerController {
         setProperty("mute", value: muted)
     }
 
+    func setSpeed(_ speed: Double) {
+        setProperty("speed", value: speed)
+    }
+
     func stop() {
         command(.stop)
     }

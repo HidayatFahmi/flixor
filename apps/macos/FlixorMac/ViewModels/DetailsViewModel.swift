@@ -708,7 +708,7 @@ class DetailsViewModel: ObservableObject {
 
     // MARK: - Seasons / Episodes
     struct Season: Identifiable { let id: String; let title: String; let source: String } // source: plex/tmdb
-    struct Episode: Identifiable { let id: String; let title: String; let overview: String?; let image: URL?; let durationMin: Int?; let progressPct: Int? }
+    struct Episode: Identifiable { let id: String; let title: String; let overview: String?; let image: URL?; let durationMin: Int?; let progressPct: Int?; let viewOffset: Int? }
     struct Extra: Identifiable { let id: String; let title: String; let image: URL?; let durationMin: Int? }
     struct Track: Identifiable { let id: String; let name: String; let language: String? }
     struct VersionDetail: Identifiable {
@@ -739,20 +739,32 @@ class DetailsViewModel: ObservableObject {
         await MainActor.run { self.episodesLoading = true }
         // Prefer Plex if mapped
         if let pid = playableId, pid.hasPrefix("plex:"), let showKey = pid.split(separator: ":").last.map(String.init) {
+            print("📺 [loadSeasonsAndEpisodes] Loading Plex seasons for showKey: \(showKey)")
             await loadPlexSeasons(showKey: showKey)
-            if seasons.isEmpty { await loadTMDBSeasons() }
+            if seasons.isEmpty {
+                print("⚠️ [loadSeasonsAndEpisodes] Plex seasons empty, but we have Plex mapping - NOT falling back to TMDB")
+                await MainActor.run { self.episodesLoading = false }
+            } else {
+                print("✅ [loadSeasonsAndEpisodes] Loaded \(seasons.count) Plex season(s)")
+            }
         } else {
+            print("📺 [loadSeasonsAndEpisodes] No Plex mapping, loading TMDB seasons")
             await loadTMDBSeasons()
         }
     }
 
     private func loadPlexSeasons(showKey: String) async {
         do {
-            struct MC: Codable { let MediaContainer: C }
-            struct C: Codable { let Metadata: [M]? }
+            // Backend returns MediaContainer directly (not wrapped)
+            struct MC: Codable {
+                let Metadata: [M]?
+                let size: Int?
+            }
             struct M: Codable { let ratingKey: String; let title: String }
+            print("📡 [loadPlexSeasons] Fetching Plex seasons for show: \(showKey)")
             let ch: MC = try await api.get("/api/plex/dir/library/metadata/\(showKey)/children")
-            let ss = (ch.MediaContainer.Metadata ?? []).map { Season(id: $0.ratingKey, title: $0.title, source: "plex") }
+            let ss = (ch.Metadata ?? []).map { Season(id: $0.ratingKey, title: $0.title, source: "plex") }
+            print("📺 [loadPlexSeasons] Found \(ss.count) season(s): \(ss.map { $0.title }.joined(separator: ", "))")
             await MainActor.run {
                 self.seasons = ss
                 self.selectedSeasonKey = ss.first?.id
@@ -761,37 +773,66 @@ class DetailsViewModel: ObservableObject {
             // On Deck
             do {
                 let od: MC = try await api.get("/api/plex/dir/library/metadata/\(showKey)/onDeck")
-                if let ep = od.MediaContainer.Metadata?.first {
+                if let ep = od.Metadata?.first {
                     let image = ImageService.shared.plexImageURL(path: ep.ratingKey, width: 600, height: 338) // best-effort
                     await MainActor.run {
-                        self.onDeck = Episode(id: "plex:\(ep.ratingKey)", title: ep.title, overview: nil, image: image, durationMin: nil, progressPct: nil)
+                        self.onDeck = Episode(id: "plex:\(ep.ratingKey)", title: ep.title, overview: nil, image: image, durationMin: nil, progressPct: nil, viewOffset: nil)
                     }
                 }
             } catch {}
-        } catch {}
+        } catch {
+            print("❌ [loadPlexSeasons] Failed: \(error)")
+        }
     }
 
     private func loadPlexEpisodes(seasonKey: String?) async {
-        guard let seasonKey = seasonKey else { return }
+        guard let seasonKey = seasonKey else {
+            print("⚠️ [loadPlexEpisodes] No season key provided")
+            return
+        }
         do {
-            struct MC: Codable { let MediaContainer: C }
-            struct C: Codable { let Metadata: [ME]? }
-            struct ME: Codable { let ratingKey: String; let title: String; let summary: String?; let thumb: String?; let parentThumb: String?; let duration: Int?; let viewOffset: Int? }
+            // Backend returns MediaContainer directly (not wrapped)
+            struct MC: Codable {
+                let Metadata: [ME]?
+                let size: Int?
+            }
+            struct ME: Codable { let ratingKey: String; let title: String; let summary: String?; let thumb: String?; let parentThumb: String?; let duration: Int?; let viewOffset: Int?; let viewCount: Int? }
+            print("📡 [loadPlexEpisodes] Fetching episodes for season: \(seasonKey)")
             let ch: MC = try await api.get("/api/plex/dir/library/metadata/\(seasonKey)/children?nocache=\(Date().timeIntervalSince1970)")
-            let eps: [Episode] = (ch.MediaContainer.Metadata ?? []).map { e in
+            let eps: [Episode] = (ch.Metadata ?? []).map { e in
                 let url = ImageService.shared.plexImageURL(path: e.thumb ?? e.parentThumb, width: 600, height: 338)
                 let dur = e.duration.map { Int($0/60000) }
                 let pct: Int? = {
-                    guard let d = e.duration, d > 0, let o = e.viewOffset else { return nil }
+                    guard let d = e.duration, d > 0 else { return nil }
+
+                    // If fully watched (viewCount > 0 and viewOffset is nil or near end), show 100%
+                    if let vc = e.viewCount, vc > 0 {
+                        if let o = e.viewOffset {
+                            let progress = Double(o) / Double(d)
+                            // If within last 2% or viewOffset is very small, treat as fully watched
+                            if progress < 0.02 {
+                                return 100
+                            }
+                            return Int(round(progress * 100))
+                        } else {
+                            // viewCount > 0 but no viewOffset = fully watched
+                            return 100
+                        }
+                    }
+
+                    // Partially watched - calculate from viewOffset
+                    guard let o = e.viewOffset else { return nil }
                     return Int(round((Double(o)/Double(d))*100))
                 }()
-                return Episode(id: "plex:\(e.ratingKey)", title: e.title, overview: e.summary, image: url, durationMin: dur, progressPct: pct)
+                return Episode(id: "plex:\(e.ratingKey)", title: e.title, overview: e.summary, image: url, durationMin: dur, progressPct: pct, viewOffset: e.viewOffset)
             }
+            print("✅ [loadPlexEpisodes] Loaded \(eps.count) episode(s) with Plex IDs")
             await MainActor.run {
                 self.episodes = eps
                 self.episodesLoading = false
             }
         } catch {
+            print("❌ [loadPlexEpisodes] Failed: \(error)")
             await MainActor.run { self.episodesLoading = false }
         }
     }
@@ -836,7 +877,7 @@ class DetailsViewModel: ObservableObject {
             let data: SD = try await api.get("/api/tmdb/tv/\(tvId)/season/\(seasonNumber)")
             let eps: [Episode] = (data.episodes ?? []).map { e in
                 let url = ImageService.shared.proxyImageURL(url: e.still_path.flatMap { "https://image.tmdb.org/t/p/w780\($0)" }, width: 600, height: 338)
-                return Episode(id: "tmdb:tv:\(e.id ?? 0)", title: e.name ?? "Episode", overview: e.overview, image: url, durationMin: e.runtime, progressPct: nil)
+                return Episode(id: "tmdb:tv:\(e.id ?? 0)", title: e.name ?? "Episode", overview: e.overview, image: url, durationMin: e.runtime, progressPct: nil, viewOffset: nil)
             }
             await MainActor.run {
                 self.episodes = eps

@@ -91,7 +91,7 @@ struct DetailsView: View {
             year: nil,
             rating: nil,
             duration: episode.durationMin.map { $0 * 60000 },
-            viewOffset: nil,
+            viewOffset: episode.viewOffset,
             summary: episode.overview,
             grandparentTitle: vm.title.isEmpty ? nil : vm.title,
             grandparentThumb: nil,
@@ -487,34 +487,87 @@ private struct EpisodesTabContent: View {
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(vm.episodes) { e in
-                        HStack(alignment: .top, spacing: 12) {
-                            if let u = e.image {
-                                CachedAsyncImage(url: u)
-                                    .frame(width: 200, height: 112)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                            }
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(e.title).font(.headline)
-                                if let o = e.overview { Text(o).foregroundStyle(.secondary).lineLimit(2) }
-                                HStack(spacing: 10) {
-                                    if let d = e.durationMin { Text("\(d)m").foregroundStyle(.secondary) }
-                                    if let p = e.progressPct { Text("\(p)%").foregroundStyle(.secondary) }
-                                }
-                            }
-                            Spacer()
-                            Button {
-                                onPlayEpisode(e)
-                            } label: {
-                                Image(systemName: "play.fill")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(8)
-                        .background(Color.white.opacity(0.04))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        EpisodeRow(episode: e, onPlay: { onPlayEpisode(e) })
                     }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Episode Row Component
+private struct EpisodeRow: View {
+    let episode: DetailsViewModel.Episode
+    let onPlay: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onPlay) {
+            HStack(alignment: .top, spacing: 12) {
+                // Episode thumbnail with progress bar and hover overlay
+                if let u = episode.image {
+                    ZStack {
+                        // Thumbnail
+                        CachedAsyncImage(url: u)
+                            .frame(width: 200, height: 112)
+
+                        // Hover overlay
+                        if isHovered {
+                            Rectangle()
+                                .fill(Color.black.opacity(0.25))
+                                .frame(width: 200, height: 112)
+
+                            // Play button
+                            Text("Play")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.white)
+                                .clipShape(Capsule())
+                        }
+
+                        // Progress bar (matching web implementation)
+                        if let progress = episode.progressPct, progress > 0 {
+                            VStack {
+                                Spacer()
+                                GeometryReader { geometry in
+                                    ZStack(alignment: .leading) {
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.2))
+                                            .frame(height: 6)
+
+                                        Rectangle()
+                                            .fill(Color(red: 229/255, green: 9/255, blue: 20/255))
+                                            .frame(width: geometry.size.width * CGFloat(min(100, max(0, progress))) / 100.0, height: 6)
+                                    }
+                                }
+                                .frame(height: 6)
+                            }
+                        }
+                    }
+                    .frame(width: 200, height: 112)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(episode.title).font(.headline)
+                    if let o = episode.overview { Text(o).foregroundStyle(.secondary).lineLimit(2) }
+                    HStack(spacing: 10) {
+                        if let d = episode.durationMin { Text("\(d)m").foregroundStyle(.secondary) }
+                    }
+                }
+                Spacer()
+            }
+            .padding(8)
+            .background(Color.white.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
             }
         }
     }

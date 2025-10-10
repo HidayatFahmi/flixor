@@ -22,11 +22,21 @@ class PlayerViewModel: ObservableObject {
     @Published var volume: Float = 1.0
     @Published var isMuted = false
     @Published var isFullScreen = false
+    @Published var playbackSpeed: Float = 1.0
 
     // Stream info
     @Published var streamURL: URL?
     @Published var availableQualities: [String] = []
     @Published var selectedQuality: String = "Original"
+
+    // Markers (intro/credits) - no high-frequency updates
+    @Published var markers: [PlayerMarker] = []
+    @Published var currentMarker: PlayerMarker? = nil
+
+    // Next episode & season episodes
+    @Published var nextEpisode: EpisodeMetadata? = nil
+    @Published var seasonEpisodes: [EpisodeMetadata] = []
+    @Published var nextEpisodeCountdown: Int? = nil
 
     // Playback metadata
     let item: MediaItem
@@ -48,11 +58,17 @@ class PlayerViewModel: ObservableObject {
     private var initialSeekApplied = false
     private var serverResumeSeconds: TimeInterval?
 
+    // Countdown timer for next episode
+    private var countdownTimer: Timer?
+
     // Session tracking for cleanup
     private var sessionId: String?
     private var plexBaseUrl: String?
     private var plexToken: String?
     private var currentURLIsHLS: Bool = false
+
+    // Navigation callback for next episode
+    var onPlayNext: ((MediaItem) -> Void)?
 
     init(item: MediaItem) {
         self.item = item
@@ -103,6 +119,10 @@ class PlayerViewModel: ObservableObject {
                 case "time-pos":
                     if let time = value as? Double {
                         self.currentTime = time
+                        // Check for markers whenever time updates (matches web/mobile frequency)
+                        self.updateCurrentMarker()
+                        // Update next episode countdown
+                        self.updateNextEpisodeCountdown()
                     }
                 case "duration":
                     if let dur = value as? Double {
@@ -172,11 +192,134 @@ class PlayerViewModel: ObservableObject {
         }
     }
 
+    private func fetchMarkers(ratingKey: String) async {
+        print("🎯 [Player] fetchMarkers() CALLED for ratingKey: \(ratingKey)")
+        do {
+            print("🌐 [Player] Calling api.getPlexMarkers...")
+            let plexMarkers = try await api.getPlexMarkers(ratingKey: ratingKey)
+            print("✅ [Player] Got \(plexMarkers.count) raw markers from API")
+            // Map to PlayerMarker (ensure id and ms fields present)
+            let mapped: [PlayerMarker] = plexMarkers.compactMap { m in
+                guard let type = m.type?.lowercased(),
+                      let s = m.startTimeOffset, let e = m.endTimeOffset else { return nil }
+                // Only care about intro/credits
+                guard type == "intro" || type == "credits" else { return nil }
+                let id = m.id ?? "\(type)-\(s)-\(e)"
+                return PlayerMarker(id: id, type: type, startTimeOffset: s, endTimeOffset: e)
+            }
+            self.markers = mapped
+            print("🎬 [Player] Markers found: \(mapped.count) - \(mapped.map { "\($0.type): \($0.startTimeOffset)-\($0.endTimeOffset)" })")
+        } catch {
+            print("⚠️ [Player] Failed to fetch markers: \(error)")
+            self.markers = []
+        }
+    }
+
+    private func fetchNextEpisode(parentRatingKey: String, currentRatingKey: String) async {
+        do {
+            // Fetch all episodes in the season
+            struct EpisodeResponse: Decodable {
+                let Metadata: [EpisodeMetadata]?
+            }
+            let response: EpisodeResponse = try await api.get("/api/plex/dir/library/metadata/\(parentRatingKey)/children")
+            let episodes = response.Metadata ?? []
+            self.seasonEpisodes = episodes
+
+            // Find next episode
+            if let currentIndex = episodes.firstIndex(where: { $0.ratingKey == currentRatingKey }),
+               currentIndex + 1 < episodes.count {
+                self.nextEpisode = episodes[currentIndex + 1]
+                print("📺 [Player] Next episode: \(self.nextEpisode?.title ?? "nil")")
+            } else {
+                self.nextEpisode = nil
+                print("📺 [Player] No next episode")
+            }
+        } catch {
+            print("⚠️ [Player] Failed to fetch next episode: \(error)")
+            self.nextEpisode = nil
+        }
+    }
+
+    private func updateCurrentMarker() {
+        guard !markers.isEmpty else {
+            if currentMarker != nil {
+                print("⚠️ [Player] Clearing marker - no markers available")
+                currentMarker = nil
+            }
+            return
+        }
+
+        let currentMs = Int(currentTime * 1000)
+
+        // Debug: Log periodically what we're checking
+        if Int(currentTime).isMultiple(of: 30) {
+            print("🔍 [Player] Checking markers at \(currentMs)ms against \(markers.count) markers:")
+            for marker in markers {
+                print("   - \(marker.type): \(marker.startTimeOffset)-\(marker.endTimeOffset)ms")
+            }
+        }
+
+        let newMarker = markers.first { marker in
+            (marker.type == "intro" || marker.type == "credits") &&
+            currentMs >= marker.startTimeOffset && currentMs <= marker.endTimeOffset
+        }
+
+        // Only update if changed to avoid unnecessary UI updates
+        if newMarker?.id != currentMarker?.id {
+            if let marker = newMarker {
+                print("🎬 [Player] ✅ Marker ACTIVE: \(marker.type) at \(currentMs)ms (range: \(marker.startTimeOffset)-\(marker.endTimeOffset))")
+            } else if currentMarker != nil {
+                print("🎬 [Player] ❌ Marker ended at \(currentMs)ms")
+            }
+            currentMarker = newMarker
+        }
+    }
+
+    private func updateNextEpisodeCountdown() {
+        guard item.type == "episode", nextEpisode != nil, duration > 0 else {
+            if nextEpisodeCountdown != nil {
+                nextEpisodeCountdown = nil
+            }
+            return
+        }
+
+        // Start countdown at credits marker or last 30s
+        let creditsMarker = markers.first { $0.type == "credits" }
+        let triggerStart = creditsMarker != nil ? TimeInterval(creditsMarker!.startTimeOffset) / 1000.0 : max(0, duration - 30)
+
+        if currentTime >= triggerStart {
+            let remaining = max(0, Int(ceil(duration - currentTime)))
+            if nextEpisodeCountdown != remaining {
+                nextEpisodeCountdown = remaining
+            }
+        } else {
+            if nextEpisodeCountdown != nil {
+                nextEpisodeCountdown = nil
+            }
+        }
+    }
+
+    func skipMarker() {
+        guard let marker = currentMarker else { return }
+        let skipToTime = TimeInterval(marker.endTimeOffset) / 1000.0 + 1.0
+        seek(to: skipToTime)
+        print("⏭️ [Player] Skipped \(marker.type) to \(skipToTime)s")
+    }
+
     private func loadStreamURL() async {
         isLoading = true
         error = nil
 
         do {
+            // Validate this is a Plex item
+            guard item.id.hasPrefix("plex:") else {
+                throw NSError(
+                    domain: "PlayerError",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Cannot play non-Plex content. Item must be in your Plex library.\n\nID: \(item.id)"]
+                )
+            }
+
             // Extract ratingKey from item.id
             let ratingKey = item.id.replacingOccurrences(of: "plex:", with: "")
 
@@ -185,7 +328,27 @@ class PlayerViewModel: ObservableObject {
             }
 
             print("📺 [Player] Fetching stream URL for ratingKey: \(ratingKey)")
-            print("📺 [Player] Item title: \(item.title)")
+            print("📺 [Player] Item title: \(item.title) (type: \(item.type))")
+
+            // Fetch markers (intro/credits)
+            print("📺 [Player] About to call fetchMarkers...")
+            await fetchMarkers(ratingKey: ratingKey)
+            print("📺 [Player] fetchMarkers returned, markers count: \(markers.count)")
+
+            // Fetch next episode if this is an episode - get parentRatingKey from metadata
+            if item.type == "episode" {
+                do {
+                    struct EpMetadata: Decodable {
+                        let parentRatingKey: String?
+                    }
+                    let meta: EpMetadata = try await api.get("/api/plex/metadata/\(ratingKey)")
+                    if let parentKey = meta.parentRatingKey {
+                        await fetchNextEpisode(parentRatingKey: parentKey, currentRatingKey: ratingKey)
+                    }
+                } catch {
+                    print("⚠️ [Player] Failed to get parent rating key: \(error)")
+                }
+            }
 
             // Get Plex server connection details (like mobile app)
             let servers = try await api.getPlexServers()
@@ -382,8 +545,8 @@ class PlayerViewModel: ObservableObject {
                 setupPlayerObservers(playerItem: playerItem)
                 setupPlayerStateObservers()
 
-                // Auto-play immediately
-                self.player?.play()
+                // Auto-play immediately with current speed
+                self.player?.rate = self.playbackSpeed
                 self.isPlaying = true
 
                 // Start progress tracking
@@ -427,6 +590,11 @@ class PlayerViewModel: ObservableObject {
                 if let duration = player.currentItem?.duration.seconds, !duration.isNaN {
                     self.duration = duration
                 }
+
+                // Check for markers every 0.5s (matches web/mobile frequency)
+                self.updateCurrentMarker()
+                // Update next episode countdown
+                self.updateNextEpisodeCountdown()
             }
         }
     }
@@ -569,7 +737,7 @@ class PlayerViewModel: ObservableObject {
 
             setupPlayerObservers(playerItem: item)
             setupPlayerStateObservers()
-            self.player?.play()
+            self.player?.rate = self.playbackSpeed
             self.isPlaying = true
             self.isLoading = false
         } catch {
@@ -581,15 +749,28 @@ class PlayerViewModel: ObservableObject {
 
     private func applyInitialSeekIfNeeded() {
         guard !initialSeekApplied else { return }
+        initialSeekApplied = true
+
         let ms = item.viewOffset ?? 0
         var seconds = TimeInterval(ms) / 1000.0
         if (seconds <= 2), let s = serverResumeSeconds { seconds = s }
+
+        // If content is almost finished (within last 30s or >98% watched), restart from beginning
+        if duration > 0 {
+            let progress = seconds / duration
+            let secondsRemaining = duration - seconds
+            if progress > 0.98 || secondsRemaining < 30 {
+                print("🔄 [Player] Content almost finished (progress: \(Int(progress * 100))%, \(Int(secondsRemaining))s remaining) - restarting from beginning")
+                seconds = 0
+            }
+        }
+
         guard seconds > 2 else { // ignore trivial offsets
-            initialSeekApplied = true
             return
         }
-        initialSeekApplied = true
+
         seek(to: seconds)
+        print("⏩ [Player] Resuming playback at \(Int(seconds))s")
     }
 
     // MARK: - Playback Controls
@@ -603,7 +784,7 @@ class PlayerViewModel: ObservableObject {
                 isPlaying = false
                 stopProgressTracking()
             } else {
-                player.play()
+                player.rate = playbackSpeed // Restore playback speed
                 isPlaying = true
                 startProgressTracking()
             }
@@ -667,6 +848,17 @@ class PlayerViewModel: ObservableObject {
         case .mpv:
             mpvController?.setMute(isMuted)
         }
+    }
+
+    func setPlaybackSpeed(_ speed: Float) {
+        playbackSpeed = speed
+        switch playerBackend {
+        case .avplayer:
+            player?.rate = isPlaying ? speed : 0
+        case .mpv:
+            mpvController?.setSpeed(Double(speed))
+        }
+        print("⚡ [Player] Playback speed set to \(speed)x")
     }
 
     func changeQuality(_ quality: String) {
@@ -840,8 +1032,99 @@ class PlayerViewModel: ObservableObject {
             self.cancellables.removeAll()
         }
     }
+
+    // MARK: - Next Episode
+
+    func playNext() {
+        guard let next = nextEpisode else { return }
+
+        // Create MediaItem from next episode
+        let nextItem = MediaItem(
+            id: "plex:\(next.ratingKey)",
+            title: next.title,
+            type: "episode",
+            thumb: next.thumb,
+            art: nil,
+            year: nil,
+            rating: nil,
+            duration: nil,
+            viewOffset: nil,
+            summary: next.summary,
+            grandparentTitle: item.grandparentTitle,
+            grandparentThumb: item.grandparentThumb,
+            grandparentArt: item.grandparentArt,
+            parentIndex: next.parentIndex,
+            index: next.index
+        )
+
+        print("▶️ [Player] Play next: \(next.title)")
+
+        // Stop current playback
+        stopPlayback()
+
+        // Call navigation callback
+        onPlayNext?(nextItem)
+    }
+
+    func cancelCountdown() {
+        nextEpisodeCountdown = nil
+    }
 }
 
 // MARK: - Helper Response Types
 
 struct EmptyResponse: Codable {}
+
+struct PlayerMarker: Codable, Identifiable {
+    let id: String
+    let type: String // "intro", "credits", "commercial"
+    let startTimeOffset: Int // milliseconds
+    let endTimeOffset: Int // milliseconds
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, startTimeOffset, endTimeOffset
+    }
+}
+
+struct EpisodeMetadata: Codable, Identifiable, Equatable {
+    let ratingKey: String
+    let title: String
+    let index: Int?
+    let parentIndex: Int?
+    let thumb: String?
+    let summary: String?
+    let viewOffset: Int? // Resume position in milliseconds
+    let duration: Int? // Total duration in milliseconds
+    let viewCount: Int? // Number of times watched
+
+    var id: String { ratingKey }
+
+    // Calculate progress percentage (0-100)
+    var progressPercent: Int? {
+        guard let dur = duration, dur > 0 else { return nil }
+
+        // If fully watched (viewCount > 0), show 100%
+        if let vc = viewCount, vc > 0 {
+            if let o = viewOffset {
+                let progress = Double(o) / Double(dur)
+                // If within last 2% or viewOffset is very small, treat as fully watched
+                if progress < 0.02 {
+                    return 100
+                }
+                return Int(round(progress * 100))
+            } else {
+                // viewCount > 0 but no viewOffset = fully watched
+                return 100
+            }
+        }
+
+        // Partially watched - calculate from viewOffset
+        guard let offset = viewOffset, offset > 0 else { return nil }
+        let percent = Int((Double(offset) / Double(dur)) * 100)
+        return min(100, max(0, percent))
+    }
+
+    static func == (lhs: EpisodeMetadata, rhs: EpisodeMetadata) -> Bool {
+        lhs.ratingKey == rhs.ratingKey
+    }
+}
