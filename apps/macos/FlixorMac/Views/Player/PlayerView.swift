@@ -21,6 +21,7 @@ struct PlayerView: View {
     @State private var mouseMovementTimer: Timer?
     @State private var pipController: AVPictureInPictureController?
     @State private var isPiPActive = false
+    @State private var isCursorHidden = false
     @AppStorage("playerBackend") private var selectedBackend: String = PlayerBackend.avplayer.rawValue
 
     private var playerBackend: PlayerBackend {
@@ -46,6 +47,9 @@ struct PlayerView: View {
                             .onTapGesture {
                                 viewModel.togglePlayPause()
                             }
+                            .onTapGesture(count: 2) {
+                                toggleFullScreen()
+                            }
                     }
                 case .mpv:
                     if let mpvController = viewModel.mpvController {
@@ -53,6 +57,9 @@ struct PlayerView: View {
                             .ignoresSafeArea()
                             .onTapGesture {
                                 viewModel.togglePlayPause()
+                            }
+                            .onTapGesture(count: 2) {
+                                toggleFullScreen()
                             }
                     }
                 }
@@ -215,6 +222,7 @@ struct PlayerView: View {
             viewModel.onDisappear()
             stopMouseTracking()
             stopKeyboardMonitoring()
+            showCursor() // Ensure cursor is visible when leaving
             // Exit fullscreen when leaving player
             if isFullScreen {
                 toggleFullScreen()
@@ -339,9 +347,31 @@ struct PlayerView: View {
     private func stopMouseTracking() {
         mouseMovementTimer?.invalidate()
         mouseMovementTimer = nil
+        showCursor() // Always show cursor when leaving player
+    }
+
+    private func hideCursor() {
+        #if os(macOS)
+        if !isCursorHidden {
+            NSCursor.hide()
+            isCursorHidden = true
+        }
+        #endif
+    }
+
+    private func showCursor() {
+        #if os(macOS)
+        if isCursorHidden {
+            NSCursor.unhide()
+            isCursorHidden = false
+        }
+        #endif
     }
 
     private func onMouseMoved() {
+        // Show cursor on mouse movement
+        showCursor()
+
         // Show controls on mouse movement
         withAnimation(.easeInOut(duration: 0.2)) {
             showControls = true
@@ -358,6 +388,8 @@ struct PlayerView: View {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showControls = false
                 }
+                // Hide cursor when controls hide and video is playing
+                hideCursor()
             }
         }
     }

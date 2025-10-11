@@ -9,6 +9,7 @@ import Foundation
 import AVKit
 import SwiftUI
 import Combine
+import MediaPlayer
 
 // MARK: - Playback Quality
 
@@ -176,9 +177,13 @@ class PlayerViewModel: ObservableObject {
     // Navigation callback for next episode
     var onPlayNext: ((MediaItem) -> Void)?
 
+    // Display sleep prevention
+    private var displaySleepAssertion: NSObjectProtocol?
+
     init(item: MediaItem) {
         self.item = item
         setupPlayer()
+        setupNowPlayingInfo()
     }
 
     deinit {
@@ -192,6 +197,15 @@ class PlayerViewModel: ObservableObject {
         player?.pause()
         player = nil
         cancellables.removeAll()
+
+        // Clean up display sleep assertion
+        #if os(macOS)
+        if let activity = displaySleepAssertion {
+            ProcessInfo.processInfo.endActivity(activity)
+            displaySleepAssertion = nil
+        }
+        #endif
+
         print("🧹 [Player] Cleaned up")
     }
 
@@ -278,6 +292,7 @@ class PlayerViewModel: ObservableObject {
                     print("▶️ [Player] MPV playback started")
                     self.isPlaying = true
                     self.isLoading = false
+                    self.enableDisplaySleep()
                 case "file-ended":
                     // Check if file-ended happened too quickly after file-started (< 3 seconds)
                     // This indicates a loading error, not actual playback completion
@@ -708,8 +723,9 @@ class PlayerViewModel: ObservableObject {
                 self.player?.rate = self.playbackSpeed
                 self.isPlaying = true
 
-                // Start progress tracking
+                // Start progress tracking and prevent display sleep
                 startProgressTracking()
+                enableDisplaySleep()
 
             case .mpv:
                 // Load file in MPV
@@ -974,10 +990,12 @@ class PlayerViewModel: ObservableObject {
                 player.pause()
                 isPlaying = false
                 stopProgressTracking()
+                disableDisplaySleep()
             } else {
                 player.rate = playbackSpeed // Restore playback speed
                 isPlaying = true
                 startProgressTracking()
+                enableDisplaySleep()
             }
         case .mpv:
             guard let mpv = mpvController else { return }
@@ -985,12 +1003,17 @@ class PlayerViewModel: ObservableObject {
                 mpv.pause()
                 isPlaying = false
                 stopProgressTracking()
+                disableDisplaySleep()
             } else {
                 mpv.play()
                 isPlaying = true
                 startProgressTracking()
+                enableDisplaySleep()
             }
         }
+
+        // Update Now Playing info
+        updateNowPlayingInfo()
     }
 
     func seek(to time: TimeInterval) {
@@ -1003,6 +1026,7 @@ class PlayerViewModel: ObservableObject {
                     print("✅ [Player] Seeked to \(time)s")
                     Task { @MainActor [weak self] in
                         await self?.reportProgress()
+                        self?.updateNowPlayingInfo()
                     }
                 }
             }
@@ -1012,6 +1036,7 @@ class PlayerViewModel: ObservableObject {
             print("✅ [MPV] Seeked to \(time)s")
             Task { @MainActor [weak self] in
                 await self?.reportProgress()
+                self?.updateNowPlayingInfo()
             }
         }
     }
@@ -1242,6 +1267,7 @@ class PlayerViewModel: ObservableObject {
     private func handlePlaybackEnd() {
         isPlaying = false
         stopProgressTracking()
+        disableDisplaySleep()
 
         // Mark as watched
         Task {
@@ -1258,6 +1284,115 @@ class PlayerViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Now Playing Info (Control Center / Lock Screen)
+
+    private func setupNowPlayingInfo() {
+        var nowPlayingInfo = [String: Any]()
+
+        // Title
+        nowPlayingInfo[MPMediaItemPropertyTitle] = item.title
+
+        // Show/Series info
+        if let grandparentTitle = item.grandparentTitle {
+            nowPlayingInfo[MPMediaItemPropertyArtist] = grandparentTitle
+
+            // Episode info
+            if let seasonNum = item.parentIndex, let episodeNum = item.index {
+                nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = "Season \(seasonNum), Episode \(episodeNum)"
+            }
+        } else {
+            // Movie - use year as artist
+            if let year = item.year {
+                nowPlayingInfo[MPMediaItemPropertyArtist] = String(year)
+            }
+        }
+
+        // Duration and playback rate
+        if duration > 0 {
+            nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
+            nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+        }
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? playbackSpeed : 0.0
+
+        // Set the info
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+
+        // Load artwork asynchronously
+        loadNowPlayingArtwork()
+
+        print("🎵 [Player] Now Playing info set: \(item.title)")
+    }
+
+    private func loadNowPlayingArtwork() {
+        // Use the item's thumb for artwork
+        guard let thumbPath = item.thumb ?? item.grandparentThumb,
+              let imageURL = ImageService.shared.plexImageURL(path: thumbPath, width: 600, height: 600) else {
+            return
+        }
+
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: imageURL)
+                if let nsImage = NSImage(data: data) {
+                    let artwork = MPMediaItemArtwork(boundsSize: nsImage.size) { _ in nsImage }
+
+                    await MainActor.run {
+                        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                        info[MPMediaItemPropertyArtwork] = artwork
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                        print("🖼️ [Player] Now Playing artwork loaded")
+                    }
+                }
+            } catch {
+                print("⚠️ [Player] Failed to load artwork: \(error)")
+            }
+        }
+    }
+
+    private func updateNowPlayingInfo() {
+        guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
+
+        // Update time and playback state
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? playbackSpeed : 0.0
+
+        if duration > 0 {
+            info[MPMediaItemPropertyPlaybackDuration] = duration
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func clearNowPlayingInfo() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        print("🎵 [Player] Now Playing info cleared")
+    }
+
+    // MARK: - Display Sleep Prevention
+
+    private func enableDisplaySleep() {
+        #if os(macOS)
+        guard displaySleepAssertion == nil else { return }
+
+        let activity = ProcessInfo.processInfo.beginActivity(
+            options: [.idleDisplaySleepDisabled, .userInitiated],
+            reason: "Playing video"
+        )
+        displaySleepAssertion = activity
+        print("💤 [Player] Display sleep disabled (media playing)")
+        #endif
+    }
+
+    private func disableDisplaySleep() {
+        #if os(macOS)
+        guard let activity = displaySleepAssertion else { return }
+
+        ProcessInfo.processInfo.endActivity(activity)
+        displaySleepAssertion = nil
+        print("💤 [Player] Display sleep re-enabled (media stopped)")
+        #endif
+    }
+
     // MARK: - Stop Playback
 
     func stopPlayback() {
@@ -1265,6 +1400,12 @@ class PlayerViewModel: ObservableObject {
 
         // Stop progress tracking immediately
         stopProgressTracking()
+
+        // Disable display sleep prevention
+        disableDisplaySleep()
+
+        // Clear Now Playing info
+        clearNowPlayingInfo()
 
         // Stop based on backend
         switch playerBackend {
