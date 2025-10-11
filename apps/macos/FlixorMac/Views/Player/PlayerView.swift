@@ -22,6 +22,7 @@ struct PlayerView: View {
     @State private var pipController: AVPictureInPictureController?
     @State private var isPiPActive = false
     @State private var isCursorHidden = false
+    @State private var mpvPiPViewController: NSViewController?
     @AppStorage("playerBackend") private var selectedBackend: String = PlayerBackend.avplayer.rawValue
 
     private var playerBackend: PlayerBackend {
@@ -53,7 +54,7 @@ struct PlayerView: View {
                     }
                 case .mpv:
                     if let mpvController = viewModel.mpvController {
-                        MPVVideoView(mpvController: mpvController)
+                        MPVVideoViewWrapper(mpvController: mpvController, isPiPActive: $isPiPActive, mpvPiPViewController: $mpvPiPViewController)
                             .ignoresSafeArea()
                             .onTapGesture {
                                 viewModel.togglePlayPause()
@@ -132,13 +133,15 @@ struct PlayerView: View {
                     isFullScreen: $isFullScreen,
                     pipController: pipController,
                     isPiPActive: isPiPActive,
+                    mpvPiPViewController: mpvPiPViewController,
                     playerBackend: playerBackend,
                     onClose: {
                         // Stop playback BEFORE dismissing
                         viewModel.stopPlayback()
                         dismiss()
                     },
-                    onToggleFullScreen: toggleFullScreen
+                    onToggleFullScreen: toggleFullScreen,
+                    onToggleMPVPiP: toggleMPVPiP
                 )
                 .transition(.opacity)
             }
@@ -245,6 +248,9 @@ struct PlayerView: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .mpvPiPDidClose)) { _ in
+            isPiPActive = false
+        }
     }
 
     // MARK: - Keyboard Controls
@@ -324,6 +330,17 @@ struct PlayerView: View {
         #endif
     }
 
+    private func toggleMPVPiP() {
+        #if os(macOS)
+        guard let mpvViewController = mpvPiPViewController as? MPVVideoViewWrapper.MPVPiPViewController else {
+            print("❌ [PiP] MPV view controller not available")
+            return
+        }
+
+        MPVPiPWindowManager.shared.togglePiP(mpvViewController: mpvViewController, stateBinding: $isPiPActive)
+        #endif
+    }
+
     private func startMouseTracking() {
         #if os(macOS)
         // Start a timer that checks mouse position periodically
@@ -391,6 +408,84 @@ struct PlayerView: View {
                 // Hide cursor when controls hide and video is playing
                 hideCursor()
             }
+        }
+    }
+}
+
+// MARK: - MPV Video View Wrapper (for PiP support)
+
+struct MPVVideoViewWrapper: NSViewControllerRepresentable {
+    let mpvController: MPVPlayerController
+    @Binding var isPiPActive: Bool
+    @Binding var mpvPiPViewController: NSViewController?
+
+    func makeNSViewController(context: Context) -> NSViewController {
+        let viewController = MPVPiPViewController()
+        viewController.mpvController = mpvController
+        viewController.isPiPActiveBinding = $isPiPActive
+
+        // Store the view controller for PiP control
+        DispatchQueue.main.async {
+            self.mpvPiPViewController = viewController
+        }
+
+        return viewController
+    }
+
+    func updateNSViewController(_ nsViewController: NSViewController, context: Context) {
+        if let pipVC = nsViewController as? MPVPiPViewController {
+            pipVC.mpvController = mpvController
+        }
+    }
+
+    class MPVPiPViewController: NSViewController {
+        var mpvController: MPVPlayerController?
+        var isPiPActiveBinding: Binding<Bool>?
+        private(set) var hostingView: NSHostingView<MPVVideoView>?
+
+        override func loadView() {
+            guard let mpvController = mpvController else {
+                view = NSView()
+                return
+            }
+
+            // Create the MPV video view hosting view
+            let hosting = NSHostingView(rootView: MPVVideoView(mpvController: mpvController))
+            hosting.translatesAutoresizingMaskIntoConstraints = false
+            self.hostingView = hosting
+            view = hosting
+        }
+
+        override func viewWillAppear() {
+            super.viewWillAppear()
+            // macOS 13.0+ PiP support
+            if #available(macOS 13.0, *) {
+                // PiP is available
+            }
+        }
+
+        // Extract the actual MPVNSView from the hosting view hierarchy
+        func getMPVNSView() -> MPVNSView? {
+            // The NSHostingView contains the MPVNSView as a subview
+            return findMPVNSView(in: hostingView)
+        }
+
+        private func findMPVNSView(in view: NSView?) -> MPVNSView? {
+            guard let view = view else { return nil }
+
+            // Check if this is the MPVNSView
+            if let mpvView = view as? MPVNSView {
+                return mpvView
+            }
+
+            // Recursively search subviews
+            for subview in view.subviews {
+                if let mpvView = findMPVNSView(in: subview) {
+                    return mpvView
+                }
+            }
+
+            return nil
         }
     }
 }
@@ -526,9 +621,11 @@ struct PlayerControlsView: View {
     @Binding var isFullScreen: Bool
     let pipController: AVPictureInPictureController?
     let isPiPActive: Bool
+    let mpvPiPViewController: NSViewController?
     let playerBackend: PlayerBackend
     let onClose: () -> Void
     let onToggleFullScreen: () -> Void
+    let onToggleMPVPiP: () -> Void
 
     @State private var isDraggingTimeline = false
     @State private var draggedTime: TimeInterval = 0
@@ -893,13 +990,18 @@ struct PlayerControlsView: View {
                     }
                     .help("Playback Speed")
 
-                    // Picture-in-Picture button (AVPlayer only)
-                    if playerBackend == .avplayer, let pip = pipController, AVPictureInPictureController.isPictureInPictureSupported() {
+                    // Picture-in-Picture button (AVPlayer and MPV)
+                    if (playerBackend == .avplayer && pipController != nil && AVPictureInPictureController.isPictureInPictureSupported()) ||
+                       (playerBackend == .mpv && mpvPiPViewController != nil) {
                         Button(action: {
-                            if isPiPActive {
-                                pip.stopPictureInPicture()
-                            } else {
-                                pip.startPictureInPicture()
+                            if playerBackend == .avplayer {
+                                if isPiPActive {
+                                    pipController?.stopPictureInPicture()
+                                } else {
+                                    pipController?.startPictureInPicture()
+                                }
+                            } else if playerBackend == .mpv {
+                                onToggleMPVPiP()
                             }
                         }) {
                             Image(systemName: isPiPActive ? "pip.exit" : "pip.enter")
@@ -2166,6 +2268,318 @@ private struct NextEpisodeHoverCard: View {
         .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
     }
 }
+
+// MARK: - MPV PiP Window Manager
+
+#if os(macOS)
+extension Notification.Name {
+    static let mpvPiPDidClose = Notification.Name("mpvPiPDidClose")
+}
+
+class MPVPiPWindowManager {
+    static let shared = MPVPiPWindowManager()
+
+    private var pipWindow: NSWindow?
+    private var windowDelegate: PiPWindowDelegate?
+    private var mpvView: MPVNSView?
+    private var originalParentView: NSView?
+    private var originalConstraints: [NSLayoutConstraint] = []
+    private var isPiPActive = false
+    private var isClosing = false
+    private var isCleaningUp = false
+    private var stateBinding: Binding<Bool>?
+
+    private init() {}
+
+    func enterPiP(mpvViewController: MPVVideoViewWrapper.MPVPiPViewController, stateBinding: Binding<Bool>? = nil) {
+        self.stateBinding = stateBinding
+        guard !isPiPActive else {
+            print("⚠️ [PiP] Already in PiP mode")
+            return
+        }
+
+        guard !isCleaningUp else {
+            print("⚠️ [PiP] Currently cleaning up, please wait")
+            return
+        }
+
+        // Extract the actual MPVNSView from the hosting view hierarchy
+        guard let mpvView = mpvViewController.getMPVNSView() else {
+            print("❌ [PiP] Could not find MPVNSView in view hierarchy")
+            showError(message: "Unable to find MPV video view")
+            return
+        }
+
+        print("✅ [PiP] Found MPVNSView, entering PiP mode")
+
+        // Store the original parent view
+        self.originalParentView = mpvView.superview
+        self.mpvView = mpvView
+
+        // Set flag to prevent display link from stopping during transition
+        mpvView.isPiPTransitioning = true
+
+        // Remove all existing constraints
+        mpvView.removeConstraints(mpvView.constraints)
+        originalConstraints = mpvView.superview?.constraints.filter { constraint in
+            constraint.firstItem as? NSView == mpvView || constraint.secondItem as? NSView == mpvView
+        } ?? []
+
+        // Deactivate constraints
+        NSLayoutConstraint.deactivate(originalConstraints)
+
+        // Remove from parent (display link won't stop due to flag)
+        mpvView.removeFromSuperview()
+
+        // Create PiP window (floating, 16:9 aspect ratio)
+        let pipWidth: CGFloat = 480
+        let pipHeight: CGFloat = 270
+        let screenFrame = NSScreen.main?.visibleFrame ?? .zero
+        let pipX = screenFrame.maxX - pipWidth - 20
+        let pipY = screenFrame.maxY - pipHeight - 20
+        let pipFrame = NSRect(x: pipX, y: pipY, width: pipWidth, height: pipHeight)
+
+        let window = NSWindow(
+            contentRect: pipFrame,
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.title = "Picture in Picture"
+        window.level = .floating
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .black
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.aspectRatio = NSSize(width: 16, height: 9)
+        window.minSize = NSSize(width: 320, height: 180)
+
+        // Set delegate
+        let delegate = PiPWindowDelegate()
+        window.delegate = delegate
+        self.windowDelegate = delegate
+
+        // Add MPV view to PiP window with constraints (like IINA does)
+        if let contentView = window.contentView {
+            mpvView.removeFromSuperview() // Ensure clean state
+            contentView.addSubview(mpvView)
+
+            // Use Auto Layout instead of manual frame management
+            mpvView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                mpvView.topAnchor.constraint(equalTo: contentView.topAnchor),
+                mpvView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+                mpvView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                mpvView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)
+            ])
+
+            // Force layout to apply constraints immediately
+            contentView.layoutSubtreeIfNeeded()
+
+            print("🔧 [PiP] View frame after constraints: \(mpvView.frame.size), bounds: \(mpvView.bounds.size)")
+
+            // CRITICAL: Force layer to update for PiP bounds
+            if let layer = mpvView.layer as? MPVVideoLayer {
+                layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+                layer.contentsScale = window.backingScaleFactor
+
+                // Force layer to update its internal state
+                let pipBounds = CGRect(origin: .zero, size: mpvView.bounds.size)
+                layer.forceUpdateForNewBounds(pipBounds)
+
+                print("🔧 [PiP] Layer autoresizingMask enabled, contentsScale: \(window.backingScaleFactor)")
+            }
+
+            print("🔧 [PiP] Final - View frame: \(mpvView.frame.size), bounds: \(mpvView.bounds.size)")
+            print("🔧 [PiP] Final - Layer frame: \(mpvView.layer?.frame.size ?? .zero), bounds: \(mpvView.layer?.bounds.size ?? .zero)")
+        }
+
+        // Clear flag after transition is complete
+        mpvView.isPiPTransitioning = false
+
+        self.pipWindow = window
+        self.isPiPActive = true
+
+        // Update SwiftUI state
+        DispatchQueue.main.async { [weak self] in
+            self?.stateBinding?.wrappedValue = true
+        }
+
+        window.makeKeyAndOrderFront(nil)
+
+        // Force redraw after transition (IINA pattern)
+        DispatchQueue.main.async {
+            // Force both view and layer to redraw
+            mpvView.layer?.setNeedsDisplay()
+            mpvView.layer?.displayIfNeeded()
+            mpvView.needsDisplay = true
+            mpvView.display()
+        }
+
+        print("✅ [PiP] Entered PiP mode - view moved to floating window")
+    }
+
+    func exitPiP() {
+        guard isPiPActive else {
+            print("⚠️ [PiP] Not in PiP mode")
+            return
+        }
+
+        // Prevent re-entry
+        guard !isClosing else {
+            print("⚠️ [PiP] Already closing")
+            return
+        }
+
+        print("🔄 [PiP] User-initiated PiP exit")
+        isClosing = true
+
+        // CRITICAL: Set flag BEFORE closing window to prevent display link from stopping
+        mpvView?.isPiPTransitioning = true
+
+        // Close the window - this will trigger windowWillClose delegate
+        pipWindow?.close()
+    }
+
+    // Called by window delegate when PiP window is closing
+    fileprivate func restoreVideoView() {
+        guard let mpvView = self.mpvView else {
+            print("⚠️ [PiP] No MPV view to restore")
+            return
+        }
+
+        print("🔄 [PiP] Restoring video view to main window")
+
+        // Set flag to prevent display link from stopping during transition
+        mpvView.isPiPTransitioning = true
+
+        // Remove from PiP window (display link won't stop due to flag)
+        mpvView.removeFromSuperview()
+
+        // Restore to original parent
+        if let originalParent = originalParentView {
+            originalParent.addSubview(mpvView)
+
+            // Restore constraints or set frame
+            if !originalConstraints.isEmpty {
+                NSLayoutConstraint.activate(originalConstraints)
+                mpvView.translatesAutoresizingMaskIntoConstraints = false
+            } else {
+                mpvView.translatesAutoresizingMaskIntoConstraints = true
+                mpvView.autoresizingMask = [.width, .height]
+                mpvView.frame = originalParent.bounds
+            }
+
+            // Force layout to apply constraints/frame immediately
+            originalParent.layoutSubtreeIfNeeded()
+
+            print("🔧 [PiP] Restored - View frame after layout: \(mpvView.frame.size), bounds: \(mpvView.bounds.size)")
+
+            // CRITICAL: Force layer to update for restored bounds
+            if let layer = mpvView.layer as? MPVVideoLayer,
+               let mainWindow = originalParent.window {
+                layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+                layer.contentsScale = mainWindow.backingScaleFactor
+
+                // Force layer to update its internal state
+                let restoredBounds = CGRect(origin: .zero, size: mpvView.bounds.size)
+                layer.forceUpdateForNewBounds(restoredBounds)
+
+                print("🔧 [PiP] Restored layer autoresizingMask, contentsScale: \(mainWindow.backingScaleFactor)")
+            }
+
+            print("🔧 [PiP] Final restored - View frame: \(mpvView.frame.size), bounds: \(mpvView.bounds.size)")
+            print("🔧 [PiP] Final restored - Layer frame: \(mpvView.layer?.frame.size ?? .zero), bounds: \(mpvView.layer?.bounds.size ?? .zero)")
+
+            // Clear flag after transition is complete
+            mpvView.isPiPTransitioning = false
+
+            // Force redraw after restoration (IINA pattern)
+            DispatchQueue.main.async {
+                // Force both view and layer to redraw
+                mpvView.layer?.setNeedsDisplay()
+                mpvView.layer?.displayIfNeeded()
+                mpvView.needsDisplay = true
+                mpvView.display()
+                originalParent.needsDisplay = true
+                originalParent.needsLayout = true
+                originalParent.layout()
+            }
+        }
+
+        // Update SwiftUI state immediately
+        stateBinding?.wrappedValue = false
+
+        // Notify that PiP closed
+        NotificationCenter.default.post(name: .mpvPiPDidClose, object: nil)
+
+        print("✅ [PiP] Video view restored to main window")
+
+        // Cleanup - safe deallocation sequence
+        // Set flag to prevent re-entry during cleanup
+        isCleaningUp = true
+
+        // Detach the delegate to prevent callbacks during deallocation
+        pipWindow?.delegate = nil
+
+        // Capture objects that need delayed deallocation
+        let windowToClose = self.pipWindow
+        let delegateToRelease = self.windowDelegate
+
+        // Clear references immediately but keep objects alive via the closure
+        self.pipWindow = nil
+        self.windowDelegate = nil
+        self.mpvView = nil
+        self.originalParentView = nil
+        self.originalConstraints = []
+        self.isPiPActive = false
+        self.isClosing = false
+        self.stateBinding = nil
+
+        // Deallocate window and delegate after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            // Force deallocation by letting objects go out of scope
+            _ = windowToClose
+            _ = delegateToRelease
+            self?.isCleaningUp = false
+            print("🧹 [PiP] Cleanup completed")
+        }
+    }
+
+    func togglePiP(mpvViewController: MPVVideoViewWrapper.MPVPiPViewController, stateBinding: Binding<Bool>) {
+        if isPiPActive {
+            exitPiP()
+        } else {
+            enterPiP(mpvViewController: mpvViewController, stateBinding: stateBinding)
+        }
+    }
+
+    private func showError(message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Picture-in-Picture Error"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    // Window delegate to handle close event
+    private class PiPWindowDelegate: NSObject, NSWindowDelegate {
+        func windowWillClose(_ notification: Notification) {
+            print("🔔 [PiP] Window will close - restoring view")
+            // Guard against double-close by checking if view still exists
+            // (restoreVideoView sets mpvView to nil, making it idempotent)
+            guard MPVPiPWindowManager.shared.mpvView != nil else {
+                print("⚠️ [PiP] Already restored, ignoring duplicate windowWillClose")
+                return
+            }
+            // Restore the video view to the main window
+            MPVPiPWindowManager.shared.restoreVideoView()
+        }
+    }
+}
+#endif
+
 #if DEBUG && canImport(PreviewsMacros)
 #Preview {
     PlayerView(item: MediaItem(

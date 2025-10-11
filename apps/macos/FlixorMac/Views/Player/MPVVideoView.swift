@@ -30,6 +30,7 @@ struct MPVVideoView: NSViewRepresentable {
 class MPVNSView: NSView {
     private var displayLink: CVDisplayLink?
     private var videoLayer: MPVVideoLayer?
+    var isPiPTransitioning = false // Flag to prevent display link stops during PiP
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -75,14 +76,67 @@ class MPVNSView: NSView {
         videoLayer?.mpvController = nil
     }
 
+    override func layout() {
+        super.layout()
+        // Always update layer size on layout to handle PiP transitions
+        updateLayerSize()
+    }
+
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        super.resizeSubviews(withOldSize: oldSize)
+        // Also update when view is resized
+        updateLayerSize()
+    }
+
+    // Force update layer size to match view bounds
+    func updateLayerSize() {
+        guard let videoLayer = videoLayer else { return }
+
+        let newBounds = CGRect(origin: .zero, size: bounds.size)
+        if videoLayer.bounds != newBounds {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true) // Disable implicit animations
+            videoLayer.bounds = newBounds
+            videoLayer.frame = newBounds
+            CATransaction.commit()
+            print("📏 [MPVView] Updated layer bounds to: \(newBounds.size)")
+        }
+
+        // Keep contentsScale aligned with current backing scale factor
+        if let scale = window?.backingScaleFactor {
+            videoLayer.contentsScale = scale
+        }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
         if window != nil {
-            startDisplayLink()
+            // Update display link for new window (IINA pattern)
+            // This ensures the display link targets the correct screen
+            if displayLink != nil {
+                print("🔄 [MPVView] View moved to new window, forcing redraw")
+                // Display link already exists, force a redraw in the new window
+                videoLayer?.setNeedsDisplay()
+                needsLayout = true
+                layout()
+            } else {
+                startDisplayLink()
+            }
+            updateLayerSize()
         } else {
-            stopDisplayLink()
+            // Don't stop display link during PiP transitions
+            if !isPiPTransitioning {
+                stopDisplayLink()
+            } else {
+                print("⏸️ [MPVView] Keeping display link running during PiP transition")
+            }
         }
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateLayerSize()
     }
 
     private func startDisplayLink() {
