@@ -7,6 +7,17 @@
 
 import SwiftUI
 
+enum NavItem: String, CaseIterable, Identifiable {
+    case home = "Home"
+    case search = "Search"
+    case library = "Library"
+    case myList = "My List"
+    case newPopular = "New & Popular"
+
+    var id: String { rawValue }
+}
+
+
 // Simple navigation router to manage NavigationPath
 final class NavigationRouter: ObservableObject {
     @Published var path = NavigationPath()
@@ -63,7 +74,7 @@ struct MainView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "play.rectangle.fill")
                         .font(.title2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.accent)
 
                     Text("FLIXOR")
                         .font(.title3.bold())
@@ -112,16 +123,14 @@ struct MainView: View {
                         Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
                     }
                 } label: {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 32, height: 32)
-                        .overlay(
-                            Text(sessionManager.currentUser?.username.prefix(1).uppercased() ?? "U")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                        )
+                    HStack(spacing: 8) {
+                        Text(sessionManager.currentUser?.username.uppercased() ?? "U")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                    }.padding(.horizontal, 10)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
             }
         }
         .toolbarBackground(.visible, for: .windowToolbar)

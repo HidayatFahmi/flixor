@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4E24577161EC49F795708746 /* subtitles.png in Resources */ = {isa = PBXBuildFile; fileRef = 28F2733407E54826B6E93AC2 /* subtitles.png */; };
+		8F8A4EEF11F94AB2B11AD777 /* back-arrow.png in Resources */ = {isa = PBXBuildFile; fileRef = D160AC63894645548212EEF0 /* back-arrow.png */; };
 		A001 /* FlixorMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B001 /* FlixorMacApp.swift */; };
 		A002 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B002 /* RootView.swift */; };
 		A003 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B003 /* SidebarView.swift */; };
@@ -31,7 +33,6 @@
 		A023 /* BillboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B023 /* BillboardView.swift */; };
 		A024 /* VirtualGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = B024 /* VirtualGrid.swift */; };
 		A025 /* SkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B025 /* SkeletonView.swift */; };
-		A026 /* TopNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B026 /* TopNavBar.swift */; };
 		A027 /* ToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B027 /* ToastView.swift */; };
 		A028 /* HomeScreenData.swift in Sources */ = {isa = PBXBuildFile; fileRef = B028 /* HomeScreenData.swift */; };
 		A029 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B029 /* HomeViewModel.swift */; };
@@ -146,9 +147,7 @@
 		C8D602AF2E990765002C9348 /* MPVThumbnailGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D602AC2E990765002C9348 /* MPVThumbnailGenerator.swift */; };
 		C8D602B02E990765002C9348 /* ThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D602AD2E990765002C9348 /* ThumbnailCache.swift */; };
 		C8D602B12E990765002C9348 /* ThumbnailMPVPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D602B22E990765002C9348 /* ThumbnailMPVPlayer.swift */; };
-		8F8A4EEF11F94AB2B11AD777 /* back-arrow.png in Resources */ = {isa = PBXBuildFile; fileRef = D160AC63894645548212EEF0 /* back-arrow.png */; };
-				4E24577161EC49F795708746 /* subtitles.png in Resources */ = {isa = PBXBuildFile; fileRef = 28F2733407E54826B6E93AC2 /* subtitles.png */; };
-		/* End PBXBuildFile section */
+/* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		C8D602142E97EB25002C9348 /* CopyFiles */ = {
@@ -234,6 +233,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		28F2733407E54826B6E93AC2 /* subtitles.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = subtitles.png; sourceTree = "<group>"; };
 		B001 /* FlixorMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlixorMacApp.swift; sourceTree = "<group>"; };
 		B002 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		B003 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
@@ -258,7 +258,6 @@
 		B023 /* BillboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillboardView.swift; sourceTree = "<group>"; };
 		B024 /* VirtualGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualGrid.swift; sourceTree = "<group>"; };
 		B025 /* SkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonView.swift; sourceTree = "<group>"; };
-		B026 /* TopNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopNavBar.swift; sourceTree = "<group>"; };
 		B027 /* ToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastView.swift; sourceTree = "<group>"; };
 		B028 /* HomeScreenData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenData.swift; sourceTree = "<group>"; };
 		B029 /* HomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
@@ -375,8 +374,7 @@
 		C8D602AD2E990765002C9348 /* ThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCache.swift; sourceTree = "<group>"; };
 		C8D602B22E990765002C9348 /* ThumbnailMPVPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailMPVPlayer.swift; sourceTree = "<group>"; };
 		D160AC63894645548212EEF0 /* back-arrow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "back-arrow.png"; sourceTree = "<group>"; };
-				28F2733407E54826B6E93AC2 /* subtitles.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "subtitles.png"; sourceTree = "<group>"; };
-		/* End PBXFileReference section */
+/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		C001 /* Frameworks */ = {
@@ -589,7 +587,6 @@
 				B023 /* BillboardView.swift */,
 				B024 /* VirtualGrid.swift */,
 				B025 /* SkeletonView.swift */,
-				B026 /* TopNavBar.swift */,
 				B027 /* ToastView.swift */,
 				B044 /* LibraryFilterBarView.swift */,
 				B049 /* WatchlistButton.swift */,
@@ -781,7 +778,7 @@
 				A064 /* thumbfast.lua in Resources */,
 				8F8A4EEF11F94AB2B11AD777 /* back-arrow.png in Resources */,
 				4E24577161EC49F795708746 /* subtitles.png in Resources */,
-);
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
@@ -819,7 +816,6 @@
 				A023 /* BillboardView.swift in Sources */,
 				A024 /* VirtualGrid.swift in Sources */,
 				A025 /* SkeletonView.swift in Sources */,
-				A026 /* TopNavBar.swift in Sources */,
 				A027 /* ToastView.swift in Sources */,
 				A028 /* HomeScreenData.swift in Sources */,
 				A029 /* HomeViewModel.swift in Sources */,
@@ -974,7 +970,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = FlixorMac/FlixorMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1009,7 +1007,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = FlixorMac/FlixorMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
