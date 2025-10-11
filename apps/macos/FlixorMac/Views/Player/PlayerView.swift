@@ -19,6 +19,8 @@ struct PlayerView: View {
     @State private var isFullScreen = false
     @State private var lastMousePosition: CGPoint = .zero
     @State private var mouseMovementTimer: Timer?
+    @State private var pipController: AVPictureInPictureController?
+    @State private var isPiPActive = false
     @AppStorage("playerBackend") private var selectedBackend: String = PlayerBackend.avplayer.rawValue
 
     private var playerBackend: PlayerBackend {
@@ -39,7 +41,7 @@ struct PlayerView: View {
                 switch playerBackend {
                 case .avplayer:
                     if let player = viewModel.player {
-                        VideoPlayerView(player: player)
+                        VideoPlayerView(player: player, pipController: $pipController, isPiPActive: $isPiPActive)
                             .ignoresSafeArea()
                             .onTapGesture {
                                 viewModel.togglePlayPause()
@@ -121,6 +123,9 @@ struct PlayerView: View {
                 PlayerControlsView(
                     viewModel: viewModel,
                     isFullScreen: $isFullScreen,
+                    pipController: pipController,
+                    isPiPActive: isPiPActive,
+                    playerBackend: playerBackend,
                     onClose: {
                         // Stop playback BEFORE dismissing
                         viewModel.stopPlayback()
@@ -206,10 +211,20 @@ struct PlayerView: View {
                 .transition(.opacity)
             }
         }
+        .onDisappear {
+            viewModel.onDisappear()
+            stopMouseTracking()
+            stopKeyboardMonitoring()
+            // Exit fullscreen when leaving player
+            if isFullScreen {
+                toggleFullScreen()
+            }
+        }
         .onAppear {
             showControls = true
             scheduleHideControls()
             startMouseTracking()
+            startKeyboardMonitoring()
 
             // Setup navigation callback for next episode
             viewModel.onPlayNext = { [weak router] nextItem in
@@ -222,13 +237,73 @@ struct PlayerView: View {
                 }
             }
         }
-        .onDisappear {
-            viewModel.onDisappear()
-            stopMouseTracking()
-            // Exit fullscreen when leaving player
+    }
+
+    // MARK: - Keyboard Controls
+
+    private func startKeyboardMonitoring() {
+        #if os(macOS)
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
+            if handleKeyDown(event) {
+                return nil // Event handled, don't propagate
+            }
+            return event // Event not handled, propagate
+        }
+        #endif
+    }
+
+    private func stopKeyboardMonitoring() {
+        // NSEvent monitors are automatically removed when the view disappears
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        // Get the key code and characters
+        let keyCode = event.keyCode
+        let characters = event.charactersIgnoringModifiers?.lowercased() ?? ""
+
+        // Handle arrow keys and special keys
+        switch keyCode {
+        case 49: // Space bar
+            viewModel.togglePlayPause()
+            return true
+
+        case 123: // Left arrow
+            viewModel.skip(seconds: -10)
+            return true
+
+        case 124: // Right arrow
+            viewModel.skip(seconds: 10)
+            return true
+
+        case 126: // Up arrow
+            let newVolume = min(1.0, viewModel.volume + 0.1)
+            viewModel.setVolume(newVolume)
+            return true
+
+        case 125: // Down arrow
+            let newVolume = max(0.0, viewModel.volume - 0.1)
+            viewModel.setVolume(newVolume)
+            return true
+
+        case 53: // Escape
             if isFullScreen {
                 toggleFullScreen()
+            } else {
+                viewModel.stopPlayback()
+                dismiss()
             }
+            return true
+
+        default:
+            // Handle character keys
+            if characters == "m" {
+                viewModel.toggleMute()
+                return true
+            } else if characters == "f" {
+                toggleFullScreen()
+                return true
+            }
+            return false
         }
     }
 
@@ -292,21 +367,91 @@ struct PlayerView: View {
 
 struct VideoPlayerView: NSViewRepresentable {
     let player: AVPlayer
+    @Binding var pipController: AVPictureInPictureController?
+    @Binding var isPiPActive: Bool
 
     func makeNSView(context: Context) -> NSView {
         let view = PlayerContainerView()
         view.player = player
+        view.pipController = pipController
+        view.isPiPActiveBinding = $isPiPActive
+
+        // Setup PiP controller
+        if let playerLayer = view.playerLayer {
+            setupPiPController(for: playerLayer, context: context, view: view)
+        }
+
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         if let playerView = nsView as? PlayerContainerView {
             playerView.player = player
+
+            // Setup PiP if not already set up
+            if pipController == nil, let playerLayer = playerView.playerLayer {
+                setupPiPController(for: playerLayer, context: context, view: playerView)
+            }
+        }
+    }
+
+    private func setupPiPController(for playerLayer: AVPlayerLayer, context: Context, view: PlayerContainerView) {
+        // Check if PiP is supported
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            print("Picture-in-Picture not supported on this device")
+            return
+        }
+
+        // Create PiP controller
+        if let controller = try? AVPictureInPictureController(playerLayer: playerLayer) {
+            controller.delegate = context.coordinator
+            DispatchQueue.main.async {
+                self.pipController = controller
+                view.pipController = controller
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isPiPActive: $isPiPActive)
+    }
+
+    class Coordinator: NSObject, AVPictureInPictureControllerDelegate {
+        @Binding var isPiPActive: Bool
+
+        init(isPiPActive: Binding<Bool>) {
+            _isPiPActive = isPiPActive
+        }
+
+        func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+            DispatchQueue.main.async {
+                self.isPiPActive = true
+            }
+        }
+
+        func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+            print("PiP started")
+        }
+
+        func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+            DispatchQueue.main.async {
+                self.isPiPActive = false
+            }
+        }
+
+        func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+            print("PiP stopped")
+        }
+
+        func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+            print("Failed to start PiP: \(error.localizedDescription)")
         }
     }
 
     class PlayerContainerView: NSView {
-        private var playerLayer: AVPlayerLayer?
+        private(set) var playerLayer: AVPlayerLayer?
+        var pipController: AVPictureInPictureController?
+        var isPiPActiveBinding: Binding<Bool>?
 
         var player: AVPlayer? {
             didSet {
@@ -347,6 +492,9 @@ struct VideoPlayerView: NSViewRepresentable {
 struct PlayerControlsView: View {
     @ObservedObject var viewModel: PlayerViewModel
     @Binding var isFullScreen: Bool
+    let pipController: AVPictureInPictureController?
+    let isPiPActive: Bool
+    let playerBackend: PlayerBackend
     let onClose: () -> Void
     let onToggleFullScreen: () -> Void
 
@@ -375,6 +523,7 @@ struct PlayerControlsView: View {
     @State private var isEpisodeListHovered = false
     @State private var isSpeedHovered = false
     @State private var isAudioSubtitlesHovered = false
+    @State private var isPiPHovered = false
     @State private var isFullscreenHovered = false
 
     var body: some View {
@@ -711,6 +860,30 @@ struct PlayerControlsView: View {
                         }
                     }
                     .help("Playback Speed")
+
+                    // Picture-in-Picture button (AVPlayer only)
+                    if playerBackend == .avplayer, let pip = pipController, AVPictureInPictureController.isPictureInPictureSupported() {
+                        Button(action: {
+                            if isPiPActive {
+                                pip.stopPictureInPicture()
+                            } else {
+                                pip.startPictureInPicture()
+                            }
+                        }) {
+                            Image(systemName: isPiPActive ? "pip.exit" : "pip.enter")
+                                .font(.system(size: 20))
+                                .frame(width: 32, height: 32)
+                                .foregroundStyle(isPiPActive ? Color.accentColor : .white)
+                        }
+                        .buttonStyle(.plain)
+                        .scaleEffect(isPiPHovered ? 1.1 : 1.0)
+                        .onHover { hovering in
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isPiPHovered = hovering
+                            }
+                        }
+                        .help("Picture in Picture")
+                    }
 
                     // Fullscreen button
                     Button(action: onToggleFullScreen) {
