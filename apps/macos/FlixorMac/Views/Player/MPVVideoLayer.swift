@@ -128,8 +128,6 @@ class MPVVideoLayer: CAOpenGLLayer {
 
     // Force the layer to update its internal state for new bounds
     func forceUpdateForNewBounds(_ newBounds: CGRect) {
-        print("🔄 [MPVLayer] Force updating for new bounds: \(newBounds.size)")
-
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
@@ -145,13 +143,6 @@ class MPVVideoLayer: CAOpenGLLayer {
 
         // Force immediate layout
         layoutIfNeeded()
-
-        print("🔄 [MPVLayer] After force update - bounds: \(bounds.size), frame: \(frame.size)")
-    }
-
-    override func layoutSublayers() {
-        super.layoutSublayers()
-        print("🔄 [MPVLayer] layoutSublayers called - bounds: \(bounds.size)")
     }
 
     // No custom update/display queue; rely on AppKit calling draw.
@@ -219,28 +210,15 @@ class MPVVideoLayer: CAOpenGLLayer {
     override func canDraw(inCGLContext ctx: CGLContextObj, pixelFormat pf: CGLPixelFormatObj,
                          forLayerTime t: CFTimeInterval, displayTime ts: UnsafePointer<CVTimeStamp>?) -> Bool {
         guard let mpvController = mpvController else {
-            print("❌ [MPVLayer] canDraw: No MPV controller")
             return false
         }
-        let canDraw = mpvController.shouldRenderUpdateFrame()
-        if !canDraw {
-            print("⏸️ [MPVLayer] canDraw: MPV says no frame to render")
-        }
-        return canDraw
+        return mpvController.shouldRenderUpdateFrame()
     }
 
     override func draw(inCGLContext ctx: CGLContextObj, pixelFormat pf: CGLPixelFormatObj,
                       forLayerTime t: CFTimeInterval, displayTime ts: UnsafePointer<CVTimeStamp>?) {
-        // Check if the context matches our MPV context
-        let contextsMatch = ctx == cglContext
-        if !contextsMatch {
-            print("⚠️ [MPVLayer] Context mismatch! CALayer context: \(ctx), MPV context: \(cglContext)")
-        }
-
-        print("🎨 [MPVLayer] draw() called, contexts match: \(contextsMatch)")
         guard let mpvController = mpvController,
               let renderContext = mpvController.getRenderContext() else {
-            print("❌ [MPVLayer] draw: No controller or render context, clearing to black")
             glClearColor(0, 0, 0, 1)
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
             return
@@ -258,18 +236,12 @@ class MPVVideoLayer: CAOpenGLLayer {
         let width = Int32(bounds.size.width * contentsScale)
         let height = Int32(bounds.size.height * contentsScale)
 
-        // Check what CAOpenGLLayer set, then override if needed
-        var autoViewport: [GLint] = [0, 0, 0, 0]
-        glGetIntegerv(GLenum(GL_VIEWPORT), &autoViewport)
-
         // Always set viewport to ensure it matches current bounds
         glViewport(0, 0, width, height)
 
         // Get framebuffer info
         var fbo: GLint = 0
         glGetIntegerv(GLenum(GL_DRAW_FRAMEBUFFER_BINDING), &fbo)
-
-        print("📐 [MPVLayer] CALayer auto viewport: \(autoViewport[2])x\(autoViewport[3]), overriding to: \(width)x\(height) (bounds: \(bounds.size), scale: \(contentsScale)), FBO: \(fbo)")
 
         // Create FBO structure with our calculated viewport dimensions
         var data = mpv_opengl_fbo(
@@ -292,12 +264,7 @@ class MPVVideoLayer: CAOpenGLLayer {
                         mpv_render_param()
                     ]
 
-                    let renderResult = mpv_render_context_render(renderContext, &params)
-                    if renderResult < 0 {
-                        print("❌ [MPVLayer] MPV render failed with code: \(renderResult)")
-                    } else {
-                        print("✅ [MPVLayer] MPV rendered successfully")
-                    }
+                    mpv_render_context_render(renderContext, &params)
                 }
             }
         }

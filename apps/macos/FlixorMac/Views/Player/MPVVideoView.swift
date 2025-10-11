@@ -29,7 +29,7 @@ struct MPVVideoView: NSViewRepresentable {
 
 class MPVNSView: NSView {
     private var displayLink: CVDisplayLink?
-    private var videoLayer: MPVVideoLayer?
+    var videoLayer: MPVVideoLayer? // Internal access for PiP controls
     var isPiPTransitioning = false // Flag to prevent display link stops during PiP
 
     override init(frame frameRect: NSRect) {
@@ -57,21 +57,14 @@ class MPVNSView: NSView {
         if #available(macOS 10.15, *) {
             wantsExtendedDynamicRangeOpenGLSurface = true
         }
-
-        print("✅ [MPVView] Layer setup complete with EDR enabled on view")
     }
 
     func setupMPVRendering(controller: MPVPlayerController) {
-        guard let videoLayer = videoLayer else {
-            print("❌ [MPVView] Cannot setup MPV rendering: layer not initialized")
-            return
-        }
-
+        guard let videoLayer = videoLayer else { return }
         videoLayer.setupMPVRendering(controller: controller)
     }
 
     func stopRendering() {
-        print("🛑 [MPVView] Stopping rendering")
         stopDisplayLink()
         videoLayer?.mpvController = nil
     }
@@ -99,7 +92,6 @@ class MPVNSView: NSView {
             videoLayer.bounds = newBounds
             videoLayer.frame = newBounds
             CATransaction.commit()
-            print("📏 [MPVView] Updated layer bounds to: \(newBounds.size)")
         }
 
         // Keep contentsScale aligned with current backing scale factor
@@ -115,7 +107,6 @@ class MPVNSView: NSView {
             // Update display link for new window (IINA pattern)
             // This ensures the display link targets the correct screen
             if displayLink != nil {
-                print("🔄 [MPVView] View moved to new window, forcing redraw")
                 // Display link already exists, force a redraw in the new window
                 videoLayer?.setNeedsDisplay()
                 needsLayout = true
@@ -128,8 +119,6 @@ class MPVNSView: NSView {
             // Don't stop display link during PiP transitions
             if !isPiPTransitioning {
                 stopDisplayLink()
-            } else {
-                print("⏸️ [MPVView] Keeping display link running during PiP transition")
             }
         }
     }
@@ -160,7 +149,6 @@ class MPVNSView: NSView {
             CVDisplayLinkSetOutputCallback(link, displayLinkCallback, Unmanaged.passUnretained(self).toOpaque())
             CVDisplayLinkStart(link)
             self.displayLink = link
-            print("✅ [MPVView] Display link started")
         }
     }
 
@@ -168,12 +156,10 @@ class MPVNSView: NSView {
         if let link = displayLink {
             CVDisplayLinkStop(link)
             self.displayLink = nil
-            print("🛑 [MPVView] Display link stopped")
         }
     }
 
     deinit {
         stopDisplayLink()
-        print("🧹 [MPVView] Cleaned up")
     }
 }

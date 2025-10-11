@@ -259,7 +259,15 @@ class MPVPlayerController {
     }
 
     func togglePlayPause() {
-        command(.cyclePause)
+        // Get current pause state
+        guard let isPaused: Bool = getProperty("pause", type: .flag) else {
+            print("⚠️ [MPV] Could not get pause state")
+            return
+        }
+
+        // Toggle it
+        setProperty("pause", value: !isPaused)
+        print("✅ [MPV] Toggled pause: \(isPaused) -> \(!isPaused)")
     }
 
     func seek(to seconds: Double) {
@@ -578,13 +586,21 @@ class MPVPlayerController {
         strArgs.insert(cmd.rawValue, at: 0)
         strArgs.append("")
 
+        print("🎮 [MPV] Executing command: \(strArgs.dropLast().joined(separator: " "))")
+
         let cArgs = strArgs.map { $0.withCString { strdup($0) } }
         defer {
             cArgs.forEach { free(UnsafeMutablePointer(mutating: $0)) }
         }
 
         var mutableArgs = cArgs.map { UnsafePointer($0) }
-        mpv_command(mpv, &mutableArgs)
+        let status = mpv_command(mpv, &mutableArgs)
+
+        if status < 0 {
+            print("❌ [MPV] Command failed: \(String(cString: mpv_error_string(status)))")
+        } else {
+            print("✅ [MPV] Command succeeded")
+        }
     }
 
     // MARK: - Event Handling
@@ -692,6 +708,12 @@ class MPVPlayerController {
             let prefix = String(cString: log.prefix)
             let level = String(cString: log.level)
             let text = String(cString: log.text).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Filter out repetitive Dolby Vision warnings
+            if text.contains("Multiple Dolby Vision RPUs found") {
+                return
+            }
+
             print("📝 [MPV] [\(prefix)] \(level): \(text)")
 
         default:
@@ -896,7 +918,7 @@ enum MPVCommand: String {
     case loadfile = "loadfile"
     case stop = "stop"
     case seek = "seek"
-    case cyclePause = "cycle"
+    case cycle = "cycle"
     case quit = "quit"
 }
 
