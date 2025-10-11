@@ -20,8 +20,8 @@ struct DetailsTabsBar: View {
     @State private var hoveredTab: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .bottom, spacing: 32) {
+        HStack(alignment: .bottom, spacing: 32) {
+            HStack(alignment: .bottom, spacing: 32){
                 ForEach(tabs) { tab in
                     TabButton(
                         tab: tab,
@@ -36,18 +36,18 @@ struct DetailsTabsBar: View {
                         }
                     )
                 }
-                Spacer()
-            }
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial.opacity(0.6))
-            .overlay(
-                Rectangle()
-                    .fill(Color.white.opacity(0.1))
-                    .frame(height: 1),
-                alignment: .bottom
-            )
+            }.padding(.horizontal, 20)
+            Spacer()
         }
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial.opacity(0.6))
+        .overlay(
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(height: 1),
+            alignment: .bottom
+        )
     }
 }
 
@@ -75,7 +75,7 @@ private struct TabButton: View {
                     }
                 }
                 .fixedSize()
-                .padding(.bottom, 16)
+                .padding(.bottom, 8)
 
                 // Underline indicator
                 if isActive {

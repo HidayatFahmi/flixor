@@ -6,9 +6,103 @@
 //
 
 import SwiftUI
-#if os(macOS)
-import AppKit
-#endif
+
+private struct DetailsLayoutMetrics {
+    let width: CGFloat
+
+    var heroHeight: CGFloat {
+        switch width {
+        case ..<900: return 600
+        case ..<1200: return 660
+        case ..<1500: return 720
+        default: return 1200
+        }
+    }
+
+    var heroHorizontalPadding: CGFloat {
+        switch width {
+        case ..<900: return 32
+        case ..<1200: return 44
+        case ..<1600: return 60
+        default: return 72
+        }
+    }
+
+    var heroTopPadding: CGFloat {
+        switch width {
+        case ..<900: return 68
+        case ..<1200: return 88
+        default: return 216
+        }
+    }
+
+    var heroBottomPadding: CGFloat {
+        switch width {
+        case ..<900: return 56
+        case ..<1400: return 72
+        default: return 88
+        }
+    }
+
+    var heroTextMaxWidth: CGFloat {
+        min(width * 0.52, 640)
+    }
+
+    var contentPadding: CGFloat {
+        switch width {
+        case ..<900: return 20
+        case ..<1200: return 20
+        default: return 20
+        }
+    }
+
+    var tabsPadding: CGFloat {
+        switch width {
+        case ..<900: return 20
+        case ..<1200: return 20
+        default: return 20
+        }
+    }
+
+    var contentMaxWidth: CGFloat {
+        min(width - contentPadding * 2, 1320)
+    }
+
+    var infoGridColumns: Int {
+        if width >= 1320 { return 3 }
+        if width >= 960 { return 2 }
+        return 1
+    }
+
+    var technicalGridMinimum: CGFloat {
+        if width >= 1500 { return 240 }
+        if width >= 1200 { return 220 }
+        if width >= 960 { return 200 }
+        return 180
+    }
+
+    var castGridMinimum: CGFloat {
+        if width >= 1500 { return 180 }
+        if width >= 1200 { return 170 }
+        if width >= 960 { return 160 }
+        return 150
+    }
+
+    var extraCardMinimum: CGFloat {
+        if width >= 1400 { return 300 }
+        if width >= 1100 { return 260 }
+        if width >= 900 { return 220 }
+        return 200
+    }
+
+    var episodeThumbnailWidth: CGFloat {
+        if width >= 1500 { return 260 }
+        if width >= 1250 { return 240 }
+        if width >= 1000 { return 220 }
+        if width >= 820 { return 200 }
+        return 180
+    }
+}
 
 struct DetailsView: View {
     let item: MediaItem
@@ -17,32 +111,41 @@ struct DetailsView: View {
     @EnvironmentObject private var router: NavigationRouter
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                VStack(spacing: 0) {
-                    DetailsHeroSection(vm: vm, onPlay: playContent)
-                    
-                    DetailsTabsBar(tabs: tabsData, activeTab: $activeTab)
-                        .padding(.horizontal, 80)
-                }
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 640)
+            let layout = DetailsLayoutMetrics(width: width)
 
-                VStack(spacing: 28) {
-                    switch activeTab {
-                    case "SUGGESTED":
-                        SuggestedSections(vm: vm)
-                    case "DETAILS":
-                        DetailsTabContent(vm: vm)
-                    case "EPISODES":
-                        EpisodesTabContent(vm: vm, onPlayEpisode: playEpisode)
-                    case "EXTRAS":
-                        ExtrasTabContent(vm: vm)
-                    default:
-                        SuggestedSections(vm: vm)
+            ScrollView {
+                VStack(spacing: 20) {
+                    VStack(spacing: 0) {
+                        DetailsHeroSection(
+                            vm: vm,
+                            onPlay: playContent,
+                            layout: layout
+                        )
+
+                        DetailsTabsBar(tabs: tabsData, activeTab: $activeTab)
                     }
+
+                    VStack(spacing: 32) {
+                        switch activeTab {
+                        case "SUGGESTED":
+                            SuggestedSections(vm: vm, layout: layout)
+                        case "DETAILS":
+                            DetailsTabContent(vm: vm, layout: layout)
+                        case "EPISODES":
+                            EpisodesTabContent(vm: vm, layout: layout, onPlayEpisode: playEpisode)
+                        case "EXTRAS":
+                            ExtrasTabContent(vm: vm, layout: layout)
+                        default:
+                            SuggestedSections(vm: vm, layout: layout)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, layout.contentPadding)
+                    .padding(.bottom, 32)
                 }
-                .padding(.horizontal, 64)
-                .padding(.bottom, 32)
-                .padding(.bottom, 32)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
         .ignoresSafeArea(edges: .top)
@@ -108,15 +211,7 @@ struct DetailsView: View {
 private struct DetailsHeroSection: View {
     @ObservedObject var vm: DetailsViewModel
     let onPlay: () -> Void
-
-    private var heroHeight: CGFloat {
-        #if os(macOS)
-        let scr = NSScreen.main?.visibleFrame.height ?? 900
-        return max(1200, min(scr * 0.58, 720))
-        #else
-        return 560
-        #endif
-    }
+    let layout: DetailsLayoutMetrics
 
     private var metaItems: [String] {
         var parts: [String] = []
@@ -149,7 +244,7 @@ private struct DetailsHeroSection: View {
             ZStack {
                 CachedAsyncImage(url: vm.backdropURL)
                     .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity, minHeight: heroHeight, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: layout.heroHeight, alignment: .center)
                 LinearGradient(
                     colors: [Color.black.opacity(0.55), Color.black.opacity(0.05)],
                     startPoint: .top,
@@ -167,36 +262,25 @@ private struct DetailsHeroSection: View {
                     endRadius: 900
                 )
             }
-            .frame(height: heroHeight)
+            .frame(height: layout.heroHeight)
             .clipped()
 
-            VStack(alignment: .leading, spacing: 25) {
-                // Title / Logo
+            VStack(alignment: .leading, spacing: heroSpacing) {
                 if let logo = vm.logoURL {
                     CachedAsyncImage(url: logo, contentMode: .fit)
-                        .frame(maxWidth: 480)
+                        .frame(maxWidth: logoWidth)
                         .shadow(color: .black.opacity(0.7), radius: 16, y: 6)
                 } else {
                     Text(vm.title)
-                        .font(.system(size: 48, weight: .heavy))
+                        .font(.system(size: titleFontSize, weight: .heavy))
                         .kerning(0.4)
                         .shadow(color: .black.opacity(0.6), radius: 12)
                 }
 
-                // Metadata Row
                 if !(metaItems.isEmpty && vm.badges.isEmpty && !(vm.externalRatings.map(hasRatings) ?? false)) {
-                    HStack(spacing: 12) {
-                        if !metaItems.isEmpty {
-                            Text(metaItems.joined(separator: " • "))
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.9))
-                        }
-                        ForEach(vm.badges, id: \.self) { badge in
-                            HeroMetaPill(text: badge)
-                        }
-                        if let ratings = vm.externalRatings, hasRatings(ratings) {
-                            RatingsStrip(ratings: ratings)
-                        }
+                    ViewThatFits {
+                        HStack(spacing: 12) { metaRow }
+                        VStack(alignment: .leading, spacing: 10) { metaRow }
                     }
                 }
 
@@ -205,53 +289,27 @@ private struct DetailsHeroSection: View {
                         .font(.system(size: 16))
                         .foregroundStyle(.white.opacity(0.88))
                         .lineSpacing(4)
-                        .frame(maxWidth: 640, alignment: .leading)
+                        .frame(maxWidth: layout.heroTextMaxWidth, alignment: .leading)
+                        .multilineTextAlignment(.leading)
                 }
 
-                HStack(alignment: .top, spacing: 24) {
-                    heroFactBlock(title: "Cast", value: castSummary)
-                    heroFactBlock(title: "Genres", value: vm.genres.isEmpty ? "—" : vm.genres.joined(separator: ", "))
-                    heroFactBlock(title: vm.mediaKind == "tv" ? "This Show Is" : "This Movie Is", value: vm.moodTags.isEmpty ? "—" : vm.moodTags.joined(separator: ", "))
+                ViewThatFits {
+                    HStack(alignment: .top, spacing: heroFactSpacing) { heroFacts }
+                    VStack(alignment: .leading, spacing: 16) { heroFacts }
                 }
 
-                HStack(spacing: 10) {
-                    Button(action: onPlay) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "play.fill")
-                            Text("Play").fontWeight(.semibold)
-                        }
-                        .font(.system(size: 16))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 26)
-                        .padding(.vertical, 12)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-
-                    if let watchlistId = canonicalWatchlistId,
-                       let mediaType = watchlistMediaType {
-                        WatchlistButton(
-                            canonicalId: watchlistId,
-                            mediaType: mediaType,
-                            plexRatingKey: vm.plexRatingKey,
-                            plexGuid: vm.plexGuid,
-                            tmdbId: vm.tmdbId,
-                            imdbId: nil,
-                            title: vm.title,
-                            year: vm.year.flatMap { Int($0) },
-                            style: .pill
-                        )
-                    }
+                ViewThatFits {
+                    HStack(spacing: actionSpacing) { actionButtons }
+                    VStack(alignment: .leading, spacing: 12) { actionButtons }
                 }
-                .padding(.top, 4)
             }
-            .padding(.leading, 64)
-            .padding(.trailing, 48)
-            .padding(.bottom, 64)
+            .padding(.leading, layout.heroHorizontalPadding)
+            .padding(.trailing, heroTrailingPadding)
+            .padding(.top, layout.heroTopPadding)
+            .padding(.bottom, layout.heroBottomPadding)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: heroHeight)
+        .frame(height: layout.heroHeight)
     }
 
     private var canonicalWatchlistId: String? {
@@ -292,15 +350,97 @@ private struct DetailsHeroSection: View {
                 .lineLimit(2)
         }
     }
+
+    private var width: CGFloat { layout.width }
+
+    private var heroSpacing: CGFloat {
+        width < 1100 ? 20 : 26
+    }
+
+    private var heroFactSpacing: CGFloat {
+        width < 1100 ? 20 : 26
+    }
+
+    private var actionSpacing: CGFloat {
+        width < 820 ? 12 : 16
+    }
+
+    private var titleFontSize: CGFloat {
+        if width < 820 { return 36 }
+        if width < 1100 { return 42 }
+        return 48
+    }
+
+    private var logoWidth: CGFloat {
+        if width < 900 { return 340 }
+        if width < 1300 { return 420 }
+        return 480
+    }
+
+    private var heroTrailingPadding: CGFloat {
+        width < 1100 ? layout.heroHorizontalPadding : 48
+    }
+
+    @ViewBuilder private var metaRow: some View {
+        if !metaItems.isEmpty {
+            Text(metaItems.joined(separator: " • "))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.9))
+        }
+        ForEach(vm.badges, id: \.self) { badge in
+            HeroMetaPill(text: badge)
+        }
+        if let ratings = vm.externalRatings, hasRatings(ratings) {
+            RatingsStrip(ratings: ratings)
+        }
+    }
+
+    @ViewBuilder private var heroFacts: some View {
+        heroFactBlock(title: "Cast", value: castSummary)
+        heroFactBlock(title: "Genres", value: vm.genres.isEmpty ? "—" : vm.genres.joined(separator: ", "))
+        heroFactBlock(title: vm.mediaKind == "tv" ? "This Show Is" : "This Movie Is", value: vm.moodTags.isEmpty ? "—" : vm.moodTags.joined(separator: ", "))
+    }
+
+    @ViewBuilder private var actionButtons: some View {
+        Button(action: onPlay) {
+            HStack(spacing: 8) {
+                Image(systemName: "play.fill")
+                Text("Play").fontWeight(.semibold)
+            }
+            .font(.system(size: 16))
+            .foregroundStyle(.black)
+            .padding(.horizontal, 26)
+            .padding(.vertical, 12)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+
+        if let watchlistId = canonicalWatchlistId,
+           let mediaType = watchlistMediaType {
+            WatchlistButton(
+                canonicalId: watchlistId,
+                mediaType: mediaType,
+                plexRatingKey: vm.plexRatingKey,
+                plexGuid: vm.plexGuid,
+                tmdbId: vm.tmdbId,
+                imdbId: nil,
+                title: vm.title,
+                year: vm.year.flatMap { Int($0) },
+                style: .pill
+            )
+        }
+    }
 }
 
 // MARK: - Tab Content Helpers
 
 private struct SuggestedSections: View {
     @ObservedObject var vm: DetailsViewModel
+    let layout: DetailsLayoutMetrics
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: layout.width < 1100 ? 24 : 28) {
             if !vm.related.isEmpty {
                 LandscapeSectionView(section: LibrarySection(id: "rel", title: "Related", items: vm.related, totalCount: vm.related.count, libraryKey: nil)) { media in
                     Task { await vm.load(for: media) }
@@ -317,6 +457,7 @@ private struct SuggestedSections: View {
 
 private struct DetailsTabContent: View {
     @ObservedObject var vm: DetailsViewModel
+    let layout: DetailsLayoutMetrics
 
     var body: some View {
         VStack(alignment: .leading, spacing: 40) {
@@ -354,7 +495,7 @@ private struct DetailsTabContent: View {
             VStack(alignment: .leading, spacing: 20) {
                 DetailsSectionHeader(title: "Info")
 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: 3), spacing: 24) {
+                HStack(alignment: .bottom, spacing: 24) {
                     // Cast
                     InfoColumn(
                         title: "Cast",
@@ -377,14 +518,18 @@ private struct DetailsTabContent: View {
 
             // Technical Details
             if let version = vm.activeVersionDetail {
-                TechnicalDetailsSection(version: version)
+                TechnicalDetailsSection(version: version, layout: layout)
             }
 
             // Cast & Crew
             if !vm.cast.isEmpty || !vm.crew.isEmpty {
-                CastCrewSection(cast: vm.cast, crew: vm.crew)
+                CastCrewSection(cast: vm.cast, crew: vm.crew, layout: layout)
             }
         }
+    }
+
+    private var infoGridColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 0, alignment: .top), count: layout.infoGridColumns)
     }
 
     private func castContent() -> String {
@@ -457,6 +602,7 @@ private struct MetadataBadge: View {
 
 private struct EpisodesTabContent: View {
     @ObservedObject var vm: DetailsViewModel
+    let layout: DetailsLayoutMetrics
     let onPlayEpisode: (DetailsViewModel.Episode) -> Void
 
     var body: some View {
@@ -473,7 +619,7 @@ private struct EpisodesTabContent: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
-                    .frame(width: 220, alignment: .leading)
+                    .frame(width: seasonPickerWidth, alignment: .leading)
                     Spacer()
                 }
             }
@@ -487,17 +633,27 @@ private struct EpisodesTabContent: View {
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(vm.episodes) { e in
-                        EpisodeRow(episode: e, onPlay: { onPlayEpisode(e) })
+                        EpisodeRow(
+                            episode: e,
+                            thumbnailWidth: layout.episodeThumbnailWidth,
+                            onPlay: { onPlayEpisode(e) }
+                        )
                     }
                 }
             }
         }
+    }
+
+    private var seasonPickerWidth: CGFloat {
+        let base = layout.episodeThumbnailWidth
+        return min(260, max(160, base * 0.85))
     }
 }
 
 // MARK: - Episode Row Component
 private struct EpisodeRow: View {
     let episode: DetailsViewModel.Episode
+    let thumbnailWidth: CGFloat
     let onPlay: () -> Void
     @State private var isHovered = false
 
@@ -509,13 +665,13 @@ private struct EpisodeRow: View {
                     ZStack {
                         // Thumbnail
                         CachedAsyncImage(url: u)
-                            .frame(width: 200, height: 112)
+                            .frame(width: thumbnailWidth, height: thumbnailHeight)
 
                         // Hover overlay
                         if isHovered {
                             Rectangle()
                                 .fill(Color.black.opacity(0.25))
-                                .frame(width: 200, height: 112)
+                                .frame(width: thumbnailWidth, height: thumbnailHeight)
 
                             // Play button
                             Text("Play")
@@ -546,7 +702,7 @@ private struct EpisodeRow: View {
                             }
                         }
                     }
-                    .frame(width: 200, height: 112)
+                    .frame(width: thumbnailWidth, height: thumbnailHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
                 }
@@ -563,6 +719,7 @@ private struct EpisodeRow: View {
             .padding(8)
             .background(Color.white.opacity(0.04))
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -571,16 +728,21 @@ private struct EpisodeRow: View {
             }
         }
     }
+
+    private var thumbnailHeight: CGFloat {
+        thumbnailWidth * (9.0 / 16.0)
+    }
 }
 
 private struct ExtrasTabContent: View {
     @ObservedObject var vm: DetailsViewModel
+    let layout: DetailsLayoutMetrics
 
     var body: some View {
         if vm.extras.isEmpty {
             Text("No extras available").foregroundStyle(.secondary)
         } else {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: layout.extraCardMinimum), spacing: 16)], spacing: 16) {
                 ForEach(vm.extras) { ex in
                     VStack(alignment: .leading, spacing: 8) {
                         if let u = ex.image {
@@ -918,13 +1080,14 @@ private struct PopcornIcon: View {
 
 private struct TechnicalDetailsSection: View {
     let version: DetailsViewModel.VersionDetail
+    let layout: DetailsLayoutMetrics
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             DetailsSectionHeader(title: "Technical Details")
 
             // Main technical specs grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: layout.technicalGridMinimum), spacing: 16)], spacing: 16) {
                 ForEach(technicalPairs(), id: \.0) { pair in
                     TechnicalInfoTile(label: pair.0, value: pair.1)
                 }
@@ -988,11 +1151,12 @@ private struct TechnicalDetailsSection: View {
 private struct CastCrewSection: View {
     let cast: [DetailsViewModel.Person]
     let crew: [DetailsViewModel.CrewPerson]
+    let layout: DetailsLayoutMetrics
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             DetailsSectionHeader(title: "Cast & Crew")
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 5), spacing: 24) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: layout.castGridMinimum), spacing: 20)], spacing: 24) {
                 ForEach(Array(people.prefix(15))) { person in
                     CastCrewCard(person: person)
                 }
