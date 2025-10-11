@@ -355,9 +355,11 @@ struct ErrorView: View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     HomeView()
         .environmentObject(SessionManager.shared)
         .environmentObject(APIClient.shared)
         .frame(width: 1200, height: 800)
 }
+#endif

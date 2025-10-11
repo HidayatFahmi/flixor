@@ -112,8 +112,12 @@ struct PlexAuthView: View {
     }
 }
 
-#Preview {
-    PlexAuthView()
-        .environmentObject(SessionManager.shared)
-        .frame(width: 800, height: 600)
+#if DEBUG
+struct PlexAuthView_Previews: PreviewProvider {
+    static var previews: some View {
+        PlexAuthView()
+            .environmentObject(SessionManager.shared)
+            .frame(width: 800, height: 600)
+    }
 }
+#endif

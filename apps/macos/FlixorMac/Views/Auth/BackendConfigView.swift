@@ -155,8 +155,10 @@ struct BackendConfigView: View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     BackendConfigView()
         .environmentObject(SessionManager.shared)
         .frame(width: 800, height: 600)
 }
+#endif

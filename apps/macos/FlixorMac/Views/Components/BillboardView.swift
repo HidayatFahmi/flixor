@@ -304,7 +304,7 @@ extension BillboardView {
         return (backdropURL, logoURL)
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     BillboardView(
         item: MediaItem(
@@ -330,3 +330,4 @@ extension BillboardView {
     )
     .background(Color.black)
 }
+#endif

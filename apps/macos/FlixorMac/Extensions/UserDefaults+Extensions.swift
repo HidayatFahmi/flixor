@@ -16,6 +16,9 @@ extension UserDefaults {
         static let autoPlayNext = "autoPlayNext"
         static let skipIntroAutomatically = "skipIntroAutomatically"
         static let skipCreditsAutomatically = "skipCreditsAutomatically"
+        static let traktAutoSyncWatched = "traktAutoSyncWatched"
+        static let traktSyncRatings = "traktSyncRatings"
+        static let traktSyncWatchlist = "traktSyncWatchlist"
     }
 
     // MARK: - Backend URL
@@ -45,5 +48,22 @@ extension UserDefaults {
     var skipCreditsAutomatically: Bool {
         get { bool(forKey: Keys.skipCreditsAutomatically) }
         set { set(newValue, forKey: Keys.skipCreditsAutomatically) }
+    }
+}
+
+extension UserDefaults {
+    var traktAutoSyncWatched: Bool {
+        get { object(forKey: Keys.traktAutoSyncWatched) as? Bool ?? true }
+        set { set(newValue, forKey: Keys.traktAutoSyncWatched) }
+    }
+
+    var traktSyncRatings: Bool {
+        get { object(forKey: Keys.traktSyncRatings) as? Bool ?? true }
+        set { set(newValue, forKey: Keys.traktSyncRatings) }
+    }
+
+    var traktSyncWatchlist: Bool {
+        get { object(forKey: Keys.traktSyncWatchlist) as? Bool ?? true }
+        set { set(newValue, forKey: Keys.traktSyncWatchlist) }
     }
 }

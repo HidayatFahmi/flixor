@@ -77,11 +77,51 @@ async function normalizeAndPersistServers(userId: string, clientId: string): Pro
       }
 
       // Collect addresses
-      const localAddresses = connections
-        .filter((c: any) => c.local && c.address)
-        .map((c: any) => c.address);
+      const localAddresses = Array.from(new Set(
+        connections
+          .filter((c: any) => c?.local && c?.address)
+          .map((c: any) => String(c.address))
+      ));
 
       const publicAddress = connections.find((c: any) => !c.local && !c.relay)?.address || undefined;
+
+      const relayAddresses = Array.from(new Set(
+        connections
+          .filter((c: any) => c?.relay && c?.address)
+          .map((c: any) => String(c.address))
+      ));
+
+      // Build address -> port mapping and URI mapping (address can have multiple ports with different protocols)
+      const addressPorts: Record<string, Array<{port: number, protocol: string, uri?: string}>> = {};
+      for (const c of connections) {
+        if (c?.address && c?.port) {
+          const addr = String(c.address);
+          if (!addressPorts[addr]) {
+            addressPorts[addr] = [];
+          }
+          // Avoid duplicates
+          const exists = addressPorts[addr].some(p => p.port === c.port && p.protocol === c.protocol);
+          if (!exists) {
+            addressPorts[addr].push({
+              port: Number(c.port),
+              protocol: c.protocol || 'https',
+              uri: c.uri ? String(c.uri) : undefined  // Store original URI for HTTPS
+            });
+          }
+        }
+      }
+
+      const connectionSnapshot = connections
+        .filter((c: any) => c?.uri)
+        .map((c: any) => ({
+          uri: String(c.uri),
+          address: c.address ? String(c.address) : undefined,
+          port: c.port ? Number(c.port) : undefined,
+          protocol: c.protocol === 'https' ? 'https' : c.protocol === 'http' ? 'http' : undefined,
+          local: typeof c.local === 'boolean' ? c.local : undefined,
+          relay: typeof c.relay === 'boolean' ? c.relay : undefined,
+          IPv6: typeof c.ipv6 === 'boolean' ? c.ipv6 : (typeof c.IPv6 === 'boolean' ? c.IPv6 : undefined),
+        }));
 
       const serverEntry: any = {
         id: srv.clientIdentifier,
@@ -92,8 +132,13 @@ async function normalizeAndPersistServers(userId: string, clientId: string): Pro
         owned: !!srv.owned,
         publicAddress,
         localAddresses,
+        relayAddresses,
+        addressPorts,
         accessToken: encryptForUser(userId, srv.accessToken),
       };
+      if (connectionSnapshot.length > 0) {
+        serverEntry.connections = connectionSnapshot;
+      }
       return serverEntry;
     });
 

@@ -159,7 +159,7 @@ struct LandscapeCard: View {
         return ImageService.shared.proxyImageURL(url: full, width: width, height: height)
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     HStack(spacing: 20) {
         LandscapeCard(
@@ -207,3 +207,4 @@ struct LandscapeCard: View {
     .padding()
     .background(Color.black)
 }
+#endif

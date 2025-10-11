@@ -96,7 +96,7 @@ struct PosterCard: View {
         .frame(width: width)
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     HStack(spacing: 12) {
         PosterCard(
@@ -145,3 +145,4 @@ struct PosterCard: View {
     .padding()
     .background(Color.black)
 }
+#endif

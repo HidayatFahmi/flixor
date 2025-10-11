@@ -176,6 +176,7 @@ struct LoadingView: View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview("Skeleton Poster") {
     HStack(spacing: 12) {
         SkeletonPosterCard(width: 150)
@@ -199,3 +200,4 @@ struct LoadingView: View {
 #Preview("Loading View") {
     LoadingView(message: "Loading your library...")
 }
+#endif

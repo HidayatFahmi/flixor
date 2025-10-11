@@ -2134,7 +2134,7 @@ private struct NextEpisodeHoverCard: View {
         .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     PlayerView(item: MediaItem(
         id: "plex:1",
@@ -2154,3 +2154,4 @@ private struct NextEpisodeHoverCard: View {
         index: nil
     ))
 }
+#endif

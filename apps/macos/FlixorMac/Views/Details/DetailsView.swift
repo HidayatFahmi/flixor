@@ -1136,6 +1136,7 @@ private struct FlowChipGroup: View {
 
 private struct Badge: View { let text: String; var body: some View { Text(text).font(.caption).padding(.horizontal, 8).padding(.vertical, 4).background(Color.white.opacity(0.12)).cornerRadius(6) } }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     DetailsView(item: MediaItem(
         id: "plex:1",
@@ -1155,3 +1156,4 @@ private struct Badge: View { let text: String; var body: some View { Text(text).
         index: nil
     ))
 }
+#endif

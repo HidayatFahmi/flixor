@@ -62,9 +62,10 @@ struct SidebarView: View {
         .listStyle(.sidebar)
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     SidebarView(selectedItem: .constant(.home))
         .environmentObject(SessionManager.shared)
         .frame(width: 220)
 }
+#endif

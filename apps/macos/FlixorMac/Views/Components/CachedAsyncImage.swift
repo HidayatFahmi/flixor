@@ -199,7 +199,7 @@ extension CachedAsyncImage where Placeholder == Color {
         )
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     CachedAsyncImage(
         url: URL(string: "https://via.placeholder.com/300x450"),
@@ -208,3 +208,4 @@ extension CachedAsyncImage where Placeholder == Color {
     .frame(width: 200)
     .cornerRadius(8)
 }
+#endif

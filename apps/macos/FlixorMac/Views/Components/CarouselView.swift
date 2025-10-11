@@ -200,7 +200,7 @@ struct CarouselRow<Item: Identifiable, Content: View>: View {
         }
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     let sampleItems = (1...10).map { i in
         MediaItem(
@@ -244,3 +244,4 @@ struct CarouselRow<Item: Identifiable, Content: View>: View {
     .padding(.vertical)
     .background(Color.black)
 }
+#endif

@@ -676,10 +676,11 @@ private struct OptionalSearchDetailsDestination: View {
         }
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     SearchView()
         .environmentObject(SessionManager.shared)
         .environmentObject(APIClient.shared)
         .frame(width: 1200, height: 800)
 }
+#endif

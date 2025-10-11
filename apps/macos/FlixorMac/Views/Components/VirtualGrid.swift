@@ -108,6 +108,7 @@ struct ResponsiveGrid<Item: Identifiable, Content: View>: View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview("Fixed Grid") {
     let sampleItems = (1...30).map { i in
         MediaItem(
@@ -159,3 +160,4 @@ struct ResponsiveGrid<Item: Identifiable, Content: View>: View {
     }
     .background(Color.black)
 }
+#endif

@@ -16,7 +16,18 @@ export class UserSettings {
     owned: boolean;
     publicAddress?: string;
     localAddresses?: string[];
+    relayAddresses?: string[];
+    addressPorts?: Record<string, Array<{port: number, protocol: string, uri?: string}>>;
     preferredUri?: string;
+    connections?: Array<{
+      uri: string;
+      address?: string;
+      port?: number;
+      protocol?: 'http' | 'https';
+      local?: boolean;
+      relay?: boolean;
+      IPv6?: boolean;
+    }>;
     accessToken: string; // encrypted
   }>;
 

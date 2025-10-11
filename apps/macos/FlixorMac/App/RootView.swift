@@ -186,9 +186,10 @@ struct ToolbarNavButton: View {
         }
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     RootView()
         .environmentObject(SessionManager.shared)
         .environmentObject(APIClient.shared)
 }
+#endif

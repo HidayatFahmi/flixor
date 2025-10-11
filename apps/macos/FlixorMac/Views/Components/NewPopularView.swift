@@ -20,7 +20,8 @@ struct NewPopularView: View {
         .navigationTitle("New & Popular")
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     NewPopularView()
 }
+#endif

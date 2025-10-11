@@ -122,6 +122,7 @@ struct ContinueCard: View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     HStack(spacing: 20) {
         ContinueCard(
@@ -169,3 +170,4 @@ struct ContinueCard: View {
     .padding()
     .background(Color.black)
 }
+#endif

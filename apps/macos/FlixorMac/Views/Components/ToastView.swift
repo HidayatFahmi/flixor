@@ -137,6 +137,7 @@ extension View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     VStack(spacing: 20) {
         ToastView(
@@ -164,3 +165,4 @@ extension View {
     .padding()
     .background(Color.gray.opacity(0.2))
 }
+#endif

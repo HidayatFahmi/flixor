@@ -100,6 +100,7 @@ struct CollectionsView: View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     CollectionsView(
         collections: [
@@ -111,3 +112,4 @@ struct CollectionsView: View {
     )
     .background(Color.black)
 }
+#endif

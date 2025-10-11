@@ -321,9 +321,11 @@ private struct WatchlistCard: View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     NavigationStack {
         MyListView()
             .environmentObject(WatchlistController())
     }
 }
+#endif

@@ -41,6 +41,8 @@ router.get('/servers',
         owned: server.owned,
         publicAddress: server.publicAddress,
         localAddresses: server.localAddresses,
+        relayAddresses: server.relayAddresses,
+        addressPorts: server.addressPorts,
         isActive: server.id === settings.currentServerId
       }));
 
@@ -124,27 +126,188 @@ router.get('/servers/:id/connections',
       if (!server) throw new AppError('Server not found', 404);
 
       const port = server.port || 32400;
-      const protos: Array<'http'|'https'> = server.protocol === 'https' ? ['https','http'] : ['http','https'];
-      const set = new Set<string>();
-      const add = (proto: string, host?: string) => {
-        if (!host) return;
-        const uri = `${proto}://${host}:${port}`;
-        set.add(uri);
-      };
-      // current
-      add(server.protocol, server.host);
-      // public
-      if (server.publicAddress) protos.forEach(p => add(p, server.publicAddress));
-      // local
-      (server.localAddresses || []).forEach((addr: string) => protos.forEach(p => add(p, addr)));
+      const protos: Array<'http' | 'https'> = server.protocol === 'https' ? ['https', 'http'] : ['http', 'https'];
+      const storedConnections: Array<any> = Array.isArray(server.connections) ? server.connections : [];
+      const localAddressSet = new Set((server.localAddresses || []).map((addr: string) => addr.toLowerCase()));
+      const addressPorts: Record<string, Array<{port: number, protocol: string, uri?: string}>> = server.addressPorts || {};
 
-      const current = `${server.protocol}://${server.host}:${port}`;
-      const preferred = server.preferredUri;
-      const connections = Array.from(set).map(uri => ({
-        uri,
-        isCurrent: uri === current,
-        isPreferred: preferred ? uri === preferred : false,
-      }));
+      type Candidate = {
+        uri: string;
+        protocol: 'http' | 'https';
+        host: string;
+        port: number;
+      };
+      const candidates = new Map<string, Candidate>();
+
+      const needsBracket = (host: string) => host.includes(':') && !host.startsWith('[') && !host.endsWith(']');
+      const stripBrackets = (host: string) => host.replace(/^\[/, '').replace(/\]$/, '');
+
+      const registerCandidate = (protocol: 'http' | 'https', host?: string | null, overridePort?: number, explicitUri?: string | null) => {
+        if (!host && !explicitUri) return undefined;
+
+        let uri = explicitUri ?? '';
+        let rawHost = host ?? '';
+        let derivedProtocol: 'http' | 'https' = protocol;
+        let derivedPort = overridePort ?? port;
+
+        if (explicitUri) {
+          try {
+            const parsed = new URL(explicitUri);
+            rawHost = parsed.hostname;
+            derivedProtocol = (parsed.protocol.replace(':', '') as 'http' | 'https');
+            derivedPort = parsed.port ? parseInt(parsed.port, 10) : derivedPort;
+          } catch {}
+        }
+
+        // Look up address-specific port and URI from the mapping if no override
+        if (!overridePort && host && addressPorts[host]) {
+          const portEntry = addressPorts[host].find(p => p.protocol === protocol);
+          if (portEntry) {
+            derivedPort = portEntry.port;
+            // For HTTPS, use the stored URI to avoid SSL certificate errors
+            if (protocol === 'https' && portEntry.uri && !explicitUri) {
+              uri = portEntry.uri;
+              // Extract hostname from the plex.direct URI
+              try {
+                const parsed = new URL(portEntry.uri);
+                rawHost = parsed.hostname;
+                derivedProtocol = (parsed.protocol.replace(':', '') as 'http' | 'https');
+                derivedPort = parsed.port ? parseInt(parsed.port, 10) : derivedPort;
+              } catch {}
+            }
+          }
+        }
+
+        if (!uri) {
+          if (!host) return undefined;
+          const formattedHost = needsBracket(host) ? `[${host}]` : host;
+          uri = `${protocol}://${formattedHost}:${derivedPort}`;
+          rawHost = host;
+        }
+
+        if (!rawHost) {
+          try {
+            const parsed = new URL(uri);
+            rawHost = parsed.hostname;
+            derivedProtocol = (parsed.protocol.replace(':', '') as 'http' | 'https');
+            derivedPort = parsed.port ? parseInt(parsed.port, 10) : derivedPort;
+          } catch {}
+        }
+
+        if (!uri) return undefined;
+        if (!candidates.has(uri)) {
+          candidates.set(uri, { uri, protocol: derivedProtocol, host: rawHost, port: derivedPort });
+        }
+        return uri;
+      };
+
+      const currentUri = registerCandidate(server.protocol, server.host);
+
+      if (server.publicAddress) {
+        for (const proto of protos) {
+          registerCandidate(proto, server.publicAddress);
+        }
+      }
+
+      for (const addr of server.localAddresses || []) {
+        for (const proto of protos) {
+          registerCandidate(proto, addr);
+        }
+      }
+
+      // Try relay addresses as last resort (lower priority)
+      for (const addr of server.relayAddresses || []) {
+        for (const proto of protos) {
+          registerCandidate(proto, addr);
+        }
+      }
+
+      const preferred = typeof server.preferredUri === 'string' ? server.preferredUri : undefined;
+      if (preferred) {
+        registerCandidate(server.protocol, undefined, undefined, preferred);
+      }
+
+      const normalizeUri = (uri?: string | null) => {
+        if (!uri) return null;
+        try {
+          const parsed = new URL(uri);
+          const proto = parsed.protocol.replace(':', '');
+          const host = parsed.hostname.toLowerCase();
+          const p = parsed.port ? parseInt(parsed.port, 10) : (proto === 'https' ? 443 : 32400);
+          return `${proto}://${host}:${p}`;
+        } catch {
+          return uri;
+        }
+      };
+
+      const normalizedCurrent = normalizeUri(currentUri);
+      const normalizedPreferred = normalizeUri(preferred);
+
+      const findStoredConnection = (candidate: Candidate) => {
+        const lowerHost = stripBrackets(candidate.host || '').toLowerCase();
+        for (const entry of storedConnections) {
+          if (!entry) continue;
+          if (entry.uri && entry.uri === candidate.uri) return entry;
+          if (entry.uri) {
+            try {
+              const u = new URL(entry.uri);
+              if (u.hostname.toLowerCase() === lowerHost) return entry;
+            } catch {}
+          }
+          if (entry.address && String(entry.address).toLowerCase() === lowerHost) return entry;
+        }
+        return undefined;
+      };
+
+      const isPrivateIPv4 = (host: string) => {
+        const cleaned = stripBrackets(host);
+        const match = cleaned.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+        if (!match) return false;
+        const [first, second] = [parseInt(match[1], 10), parseInt(match[2], 10)];
+        if (first === 10) return true;
+        if (first === 172 && second >= 16 && second <= 31) return true;
+        if (first === 192 && second === 168) return true;
+        if (first === 169 && second === 254) return true;
+        if (first === 127) return true;
+        return false;
+      };
+
+      const isLikelyLocal = (host?: string) => {
+        if (!host) return false;
+        const normalized = stripBrackets(host).toLowerCase();
+        if (localAddressSet.has(normalized)) return true;
+        if (normalized === 'localhost') return true;
+        if (normalized.endsWith('.local')) return true;
+        if (isPrivateIPv4(normalized)) return true;
+        if (normalized.startsWith('fe80:') || normalized.startsWith('fd')) return true;
+        return false;
+      };
+
+      const connections = Array.from(candidates.values()).map(candidate => {
+        const match = findStoredConnection(candidate) || {};
+        const rawHost = candidate.host || '';
+
+        const localFlag = typeof match.local === 'boolean' ? match.local : isLikelyLocal(rawHost);
+        const relayFlag = typeof match.relay === 'boolean' ? match.relay : undefined;
+        const ipv6Flag = typeof match.IPv6 === 'boolean'
+          ? match.IPv6
+          : stripBrackets(rawHost).includes(':') ? true : undefined;
+
+        const normalizedCandidate = normalizeUri(candidate.uri);
+        const entry: any = {
+          uri: candidate.uri,
+          protocol: candidate.protocol,
+          isCurrent: normalizedCurrent ? normalizedCandidate === normalizedCurrent : false,
+          isPreferred: normalizedPreferred ? normalizedCandidate === normalizedPreferred : false,
+        };
+
+        if (localFlag !== undefined) entry.local = localFlag;
+        if (relayFlag !== undefined) entry.relay = relayFlag;
+        if (ipv6Flag !== undefined) entry.IPv6 = ipv6Flag;
+
+        return entry;
+      });
+
       res.json({ serverId: id, connections });
     } catch (error: any) {
       logger.error('Failed to get server connections', error);

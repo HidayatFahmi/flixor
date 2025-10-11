@@ -178,7 +178,7 @@ struct WatchlistButton: View {
         let _: Response = try await APIClient.shared.post("/api/trakt/watchlist/remove", body: payload)
     }
 }
-
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     WatchlistButton(
         canonicalId: "tmdb:movie:1234",
@@ -193,3 +193,4 @@ struct WatchlistButton: View {
     )
     .environmentObject(WatchlistController())
 }
+#endif

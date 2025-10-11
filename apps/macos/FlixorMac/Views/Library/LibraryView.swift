@@ -258,6 +258,8 @@ private struct LibraryListRow: View {
     }
 }
 
+#if DEBUG && canImport(PreviewsMacros)
 #Preview {
     LibraryView()
 }
+#endif

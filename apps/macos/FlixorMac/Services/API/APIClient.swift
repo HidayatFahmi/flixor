@@ -224,6 +224,34 @@ class APIClient: ObservableObject {
     func getPlexAuthServers() async throws -> [PlexAuthServer] {
         return try await get("/api/auth/servers")
     }
+
+    func setCurrentPlexServer(serverId: String) async throws -> SimpleMessageResponse {
+        struct Body: Encodable { let serverId: String }
+        return try await post("/api/plex/servers/current", body: Body(serverId: serverId))
+    }
+
+    func setPlexServerEndpoint(serverId: String, uri: String, test: Bool = true) async throws -> PlexEndpointUpdateResponse {
+        struct Body: Encodable { let uri: String; let test: Bool }
+        let encodedId = serverId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? serverId
+        return try await post("/api/plex/servers/\(encodedId)/endpoint", body: Body(uri: uri, test: test))
+    }
+
+    func traktDeviceCode() async throws -> TraktDeviceCodeResponse {
+        return try await post("/api/trakt/oauth/device/code")
+    }
+
+    func traktDeviceToken(code: String) async throws -> TraktTokenPollResponse {
+        struct Body: Encodable { let code: String }
+        return try await post("/api/trakt/oauth/device/token", body: Body(code: code))
+    }
+
+    func traktUserProfile() async throws -> TraktUserProfile {
+        return try await get("/api/trakt/users/me")
+    }
+
+    func traktSignOut() async throws -> SimpleOkResponse {
+        return try await post("/api/trakt/signout")
+    }
 }
 
 // MARK: - Plex Markers (intro/credits)
@@ -256,4 +284,59 @@ extension APIClient {
         let list = env.MediaContainer?.Metadata?.first?.Marker ?? []
         return list
     }
+}
+
+// MARK: - Supporting Models
+
+struct SimpleMessageResponse: Decodable {
+    let message: String?
+    let serverId: String?
+}
+
+struct SimpleOkResponse: Decodable {
+    let ok: Bool
+    let message: String?
+}
+
+struct PlexEndpointUpdateResponse: Decodable {
+    let message: String?
+    let server: PlexEndpointServer?
+}
+
+struct PlexEndpointServer: Decodable {
+    let id: String?
+    let host: String?
+    let port: Int?
+    let protocolName: String?
+    let preferredUri: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case host
+        case port
+        case preferredUri
+        case protocolName = "protocol"
+    }
+}
+
+struct TraktDeviceCodeResponse: Decodable {
+    let device_code: String
+    let user_code: String
+    let verification_url: String
+    let expires_in: Int
+    let interval: Int?
+}
+
+struct TraktTokenPollResponse: Decodable {
+    let ok: Bool
+    let tokens: [String: String]?
+    let error: String?
+    let error_description: String?
+}
+
+struct TraktUserProfile: Decodable {
+    struct IDs: Decodable { let slug: String? }
+    let username: String?
+    let name: String?
+    let ids: IDs?
 }
