@@ -235,8 +235,22 @@ class HomeViewModel: ObservableObject {
         }
         let first = Array(mapped.prefix(8))
         let second = Array(mapped.dropFirst(8).prefix(8))
-        let popular = LibrarySection(id: "tmdb-popular", title: "Popular on Plex", items: first, totalCount: first.count, libraryKey: nil)
-        let trending = LibrarySection(id: "tmdb-trending", title: "Trending Now", items: second, totalCount: second.count, libraryKey: nil)
+        let popular = LibrarySection(
+            id: "tmdb-popular",
+            title: "Popular on Plex",
+            items: first,
+            totalCount: first.count,
+            libraryKey: nil,
+            browseContext: .tmdb(kind: .trending, media: .tv, id: nil, displayTitle: "Popular on Plex")
+        )
+        let trending = LibrarySection(
+            id: "tmdb-trending",
+            title: "Trending Now",
+            items: second,
+            totalCount: second.count,
+            libraryKey: nil,
+            browseContext: .tmdb(kind: .trending, media: .tv, id: nil, displayTitle: "Trending Now")
+        )
         return ([popular], [trending])
     }
 
@@ -283,7 +297,14 @@ class HomeViewModel: ObservableObject {
             }
 
             if items.isEmpty { return nil }
-            return LibrarySection(id: "plextv-watchlist", title: "Watchlist", items: Array(items.prefix(12)), totalCount: items.count, libraryKey: nil)
+            return LibrarySection(
+                id: "plextv-watchlist",
+                title: "Watchlist",
+                items: Array(items.prefix(12)),
+                totalCount: items.count,
+                libraryKey: nil,
+                browseContext: .plexWatchlist
+            )
         } catch {
             print("⚠️ [Home] Plex.tv watchlist failed: \(error)")
             return nil
@@ -342,20 +363,36 @@ class HomeViewModel: ObservableObject {
                 if let top: DirTop = try? await apiClient.get("/api/plex/library/\(libKey)/genre"),
                    let dir = top.Directory?.first(where: { $0.title.lowercased() == spec.genre.lowercased() }) {
                     let target = normalizedGenreRequest(dir.fastKey, libKey: libKey, rawKey: dir.key)
+                    let combinedPath = Self.browsePath(path: target.path, queryItems: target.queryItems)
                     let meta: MetaResponse = try await apiClient.get("/api/plex/dir\(target.path)", queryItems: target.queryItems)
                     let items = (meta.MediaContainer?.Metadata ?? meta.Metadata ?? []).map { $0.toMediaItem() }
                     if !items.isEmpty {
-                        out.append(LibrarySection(id: "genre-\(spec.genre.lowercased())", title: spec.label, items: Array(items.prefix(12)), totalCount: items.count, libraryKey: libKey))
+                        out.append(LibrarySection(
+                            id: "genre-\(spec.genre.lowercased())",
+                            title: spec.label,
+                            items: Array(items.prefix(12)),
+                            totalCount: items.count,
+                            libraryKey: libKey,
+                            browseContext: .plexDirectory(path: combinedPath, title: spec.label)
+                        ))
                     }
                     continue
                 }
                 let dirs: DirContainer = try await apiClient.get("/api/plex/library/\(libKey)/genre")
                 guard let dir = dirs.MediaContainer.Directory?.first(where: { $0.title.lowercased() == spec.genre.lowercased() }) else { continue }
                 let target = normalizedGenreRequest(dir.fastKey, libKey: libKey, rawKey: dir.key)
+                let combinedPath = Self.browsePath(path: target.path, queryItems: target.queryItems)
                 let meta: MetaResponse = try await apiClient.get("/api/plex/dir\(target.path)", queryItems: target.queryItems)
                 let items = (meta.MediaContainer?.Metadata ?? meta.Metadata ?? []).map { $0.toMediaItem() }
                 if !items.isEmpty {
-                    out.append(LibrarySection(id: "genre-\(spec.genre.lowercased())", title: spec.label, items: Array(items.prefix(12)), totalCount: items.count, libraryKey: libKey))
+                    out.append(LibrarySection(
+                        id: "genre-\(spec.genre.lowercased())",
+                        title: spec.label,
+                        items: Array(items.prefix(12)),
+                        totalCount: items.count,
+                        libraryKey: libKey,
+                        browseContext: .plexDirectory(path: combinedPath, title: spec.label)
+                    ))
                 }
             } catch {
                 print("⚠️ [Home] Genre fetch failed for \(spec.label): \(error)")
@@ -382,6 +419,15 @@ class HomeViewModel: ObservableObject {
         return (key, nil)
     }
 
+    private static func browsePath(path: String, queryItems: [URLQueryItem]?) -> String {
+        guard let queryItems, !queryItems.isEmpty else { return path }
+        let query = queryItems.compactMap { item -> String? in
+            guard let value = item.value else { return item.name }
+            return "\(item.name)=\(value)"
+        }.joined(separator: "&")
+        return "\(path)?\(query)"
+    }
+
     // MARK: - Trakt Sections
 
     private func fetchTraktSections() async throws -> [LibrarySection] {
@@ -390,34 +436,88 @@ class HomeViewModel: ObservableObject {
         // Trending Movies (public)
         do {
             let items = try await fetchTraktTrending(media: "movies")
-            if !items.isEmpty { sections.append(LibrarySection(id: "trakt-trending-movies", title: "Trending Movies on Trakt", items: items, totalCount: items.count, libraryKey: nil)) }
+            if !items.isEmpty {
+                sections.append(LibrarySection(
+                    id: "trakt-trending-movies",
+                    title: "Trending Movies on Trakt",
+                    items: items,
+                    totalCount: items.count,
+                    libraryKey: nil,
+                    browseContext: .trakt(kind: .trendingMovies)
+                ))
+            }
         } catch { print("⚠️ [Home] Trakt trending movies failed: \(error)") }
 
         // Trending TV Shows (public)
         do {
             let items = try await fetchTraktTrending(media: "shows")
-            if !items.isEmpty { sections.append(LibrarySection(id: "trakt-trending-shows", title: "Trending TV Shows on Trakt", items: items, totalCount: items.count, libraryKey: nil)) }
+            if !items.isEmpty {
+                sections.append(LibrarySection(
+                    id: "trakt-trending-shows",
+                    title: "Trending TV Shows on Trakt",
+                    items: items,
+                    totalCount: items.count,
+                    libraryKey: nil,
+                    browseContext: .trakt(kind: .trendingShows)
+                ))
+            }
         } catch { print("⚠️ [Home] Trakt trending shows failed: \(error)") }
 
         // Your Trakt Watchlist (auth)
         if let wl = try? await fetchTraktWatchlist() {
-            if !wl.isEmpty { sections.append(LibrarySection(id: "trakt-watchlist", title: "Your Trakt Watchlist", items: wl, totalCount: wl.count, libraryKey: nil)) }
+            if !wl.isEmpty {
+                sections.append(LibrarySection(
+                    id: "trakt-watchlist",
+                    title: "Your Trakt Watchlist",
+                    items: wl,
+                    totalCount: wl.count,
+                    libraryKey: nil,
+                    browseContext: .trakt(kind: .watchlist)
+                ))
+            }
         }
 
         // Recently Watched (auth)
         if let hist = try? await fetchTraktHistory() {
-            if !hist.isEmpty { sections.append(LibrarySection(id: "trakt-history", title: "Recently Watched", items: hist, totalCount: hist.count, libraryKey: nil)) }
+            if !hist.isEmpty {
+                sections.append(LibrarySection(
+                    id: "trakt-history",
+                    title: "Recently Watched",
+                    items: hist,
+                    totalCount: hist.count,
+                    libraryKey: nil,
+                    browseContext: .trakt(kind: .history)
+                ))
+            }
         }
 
         // Recommended for You (auth)
         if let rec = try? await fetchTraktRecommendations() {
-            if !rec.isEmpty { sections.append(LibrarySection(id: "trakt-recs", title: "Recommended for You", items: rec, totalCount: rec.count, libraryKey: nil)) }
+            if !rec.isEmpty {
+                sections.append(LibrarySection(
+                    id: "trakt-recs",
+                    title: "Recommended for You",
+                    items: rec,
+                    totalCount: rec.count,
+                    libraryKey: nil,
+                    browseContext: .trakt(kind: .recommendations)
+                ))
+            }
         }
 
         // Popular TV Shows on Trakt (public)
         do {
             let items = try await fetchTraktPopular(media: "shows")
-            if !items.isEmpty { sections.append(LibrarySection(id: "trakt-popular-shows", title: "Popular TV Shows on Trakt", items: items, totalCount: items.count, libraryKey: nil)) }
+            if !items.isEmpty {
+                sections.append(LibrarySection(
+                    id: "trakt-popular-shows",
+                    title: "Popular TV Shows on Trakt",
+                    items: items,
+                    totalCount: items.count,
+                    libraryKey: nil,
+                    browseContext: .trakt(kind: .popularShows)
+                ))
+            }
         } catch { print("⚠️ [Home] Trakt popular shows failed: \(error)") }
 
         return sections
@@ -739,7 +839,8 @@ class HomeViewModel: ObservableObject {
                         title: library.title,
                         items: items.map { $0.toMediaItem() },
                         totalCount: items.count,
-                        libraryKey: library.key
+                        libraryKey: library.key,
+                        browseContext: .plexLibrary(key: library.key, title: library.title)
                     ))
                 }
             } catch {

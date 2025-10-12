@@ -108,45 +108,72 @@ struct DetailsView: View {
     let item: MediaItem
     @StateObject private var vm = DetailsViewModel()
     @State private var activeTab: String = "SUGGESTED"
+    @StateObject private var browseViewModel = BrowseModalViewModel()
+    @State private var showBrowseModal = false
+    @State private var activeBrowseContext: BrowseContext?
     @EnvironmentObject private var router: NavigationRouter
     @EnvironmentObject private var mainView: MainViewState
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 640)
-            let layout = DetailsLayoutMetrics(width: width)
+        ZStack {
+            GeometryReader { proxy in
+                let width = max(proxy.size.width, 640)
+                let layout = DetailsLayoutMetrics(width: width)
 
-            ScrollView {
-                VStack(spacing: 20) {
-                    VStack(spacing: 0) {
-                        DetailsHeroSection(
-                            vm: vm,
-                            onPlay: playContent,
-                            layout: layout
-                        )
+                ScrollView {
+                    VStack(spacing: 20) {
+                        VStack(spacing: 0) {
+                            DetailsHeroSection(
+                                vm: vm,
+                                onPlay: playContent,
+                                layout: layout
+                            )
 
-                        DetailsTabsBar(tabs: tabsData, activeTab: $activeTab)
+                            DetailsTabsBar(tabs: tabsData, activeTab: $activeTab)
+                        }
+
+                        VStack(spacing: 32) {
+                            switch activeTab {
+                            case "SUGGESTED":
+                                SuggestedSections(vm: vm, layout: layout, onBrowse: { context in
+                                    presentBrowse(context)
+                                })
+                            case "DETAILS":
+                                DetailsTabContent(vm: vm, layout: layout)
+                            case "EPISODES":
+                                EpisodesTabContent(vm: vm, layout: layout, onPlayEpisode: playEpisode)
+                            case "EXTRAS":
+                                ExtrasTabContent(vm: vm, layout: layout)
+                            default:
+                                SuggestedSections(vm: vm, layout: layout, onBrowse: { context in
+                                    presentBrowse(context)
+                                })
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, layout.contentPadding)
+                        .padding(.bottom, 32)
                     }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .top)
 
-                    VStack(spacing: 32) {
-                        switch activeTab {
-                        case "SUGGESTED":
-                            SuggestedSections(vm: vm, layout: layout)
-                        case "DETAILS":
-                            DetailsTabContent(vm: vm, layout: layout)
-                        case "EPISODES":
-                            EpisodesTabContent(vm: vm, layout: layout, onPlayEpisode: playEpisode)
-                        case "EXTRAS":
-                            ExtrasTabContent(vm: vm, layout: layout)
-                        default:
-                            SuggestedSections(vm: vm, layout: layout)
+            if showBrowseModal {
+                BrowseModalView(
+                    isPresented: $showBrowseModal,
+                    viewModel: browseViewModel,
+                    onSelect: { media in
+                        showBrowseModal = false
+                        Task {
+                            await vm.load(for: media)
+                            await MainActor.run {
+                                activeTab = (vm.mediaKind == "tv") ? "EPISODES" : "SUGGESTED"
+                            }
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, layout.contentPadding)
-                    .padding(.bottom, 32)
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
+                )
+                .transition(.opacity)
+                .zIndex(2)
             }
         }
         .ignoresSafeArea(edges: .top)
@@ -155,6 +182,12 @@ struct DetailsView: View {
         .task {
             await vm.load(for: item)
             if vm.mediaKind == "tv" { activeTab = "EPISODES" }
+        }
+        .onChange(of: showBrowseModal) { value in
+            if !value {
+                activeBrowseContext = nil
+                browseViewModel.reset()
+            }
         }
         // Destination for PlayerView is handled at root via NavigationStack(path:)
     }
@@ -201,6 +234,14 @@ struct DetailsView: View {
         case .library: router.libraryPath.append(item)
         case .myList: router.myListPath.append(item)
         case .newPopular: router.newPopularPath.append(item)
+        }
+    }
+
+    private func presentBrowse(_ context: BrowseContext) {
+        activeBrowseContext = context
+        showBrowseModal = true
+        Task {
+            await browseViewModel.load(context: context)
         }
     }
 
@@ -459,18 +500,47 @@ private struct DetailsHeroSection: View {
 private struct SuggestedSections: View {
     @ObservedObject var vm: DetailsViewModel
     let layout: DetailsLayoutMetrics
+    var onBrowse: ((BrowseContext) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: layout.width < 1100 ? 24 : 28) {
             if !vm.related.isEmpty {
-                LandscapeSectionView(section: LibrarySection(id: "rel", title: "Related", items: vm.related, totalCount: vm.related.count, libraryKey: nil)) { media in
+                LandscapeSectionView(
+                    section: LibrarySection(
+                        id: "rel",
+                        title: "Related",
+                        items: vm.related,
+                        totalCount: vm.related.count,
+                        libraryKey: nil,
+                        browseContext: vm.relatedBrowseContext
+                    ),
+                    onTap: { media in
                     Task { await vm.load(for: media) }
-                }.padding(.trailing, 60)
+                },
+                    onBrowse: { context in
+                        onBrowse?(context)
+                    }
+                )
+                .padding(.trailing, 60)
             }
             if !vm.similar.isEmpty {
-                LandscapeSectionView(section: LibrarySection(id: "sim", title: "Similar", items: vm.similar, totalCount: vm.similar.count, libraryKey: nil)) { media in
+                LandscapeSectionView(
+                    section: LibrarySection(
+                        id: "sim",
+                        title: "Similar",
+                        items: vm.similar,
+                        totalCount: vm.similar.count,
+                        libraryKey: nil,
+                        browseContext: vm.similarBrowseContext
+                    ),
+                    onTap: { media in
                     Task { await vm.load(for: media) }
-                }.padding(.trailing, 60)
+                },
+                    onBrowse: { context in
+                        onBrowse?(context)
+                    }
+                )
+                .padding(.trailing, 60)
             }
         }
     }

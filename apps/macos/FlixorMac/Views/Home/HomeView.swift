@@ -10,63 +10,86 @@ import SwiftUI
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @EnvironmentObject private var router: NavigationRouter
+    @StateObject private var browseViewModel = BrowseModalViewModel()
+    @State private var showBrowseModal = false
+    @State private var activeBrowseContext: BrowseContext?
 
     var body: some View {
-        Group {
-            if let error = viewModel.error {
-                ErrorView(message: error) {
-                    Task {
-                        await viewModel.refresh()
+        ZStack {
+            Group {
+                if let error = viewModel.error {
+                    ErrorView(message: error) {
+                        Task {
+                            await viewModel.refresh()
+                        }
+                    }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 0) {
+
+                            // Billboard Hero or skeleton
+                            Group {
+                                if !viewModel.billboardItems.isEmpty {
+                                    BillboardSection(viewModel: viewModel)
+                                } else {
+                                    HeroSkeleton()
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 16)
+
+                            // Spacing below hero
+                            Color.clear.frame(height: 24)
+
+                            // Content sections (mirror web order)
+                            VStack(spacing: 40) {
+                                if viewModel.isLoading {
+                                    // Continue Watching (landscape)
+                                    SkeletonCarouselRow(itemWidth: 420, itemCount: 4, cardType: .landscape)
+                                // Popular on Plex (landscape)
+                                SkeletonCarouselRow(itemWidth: 420, itemCount: 8, cardType: .landscape)
+                                // Trending Now (landscape)
+                                SkeletonCarouselRow(itemWidth: 420, itemCount: 8, cardType: .landscape)
+                                } else {
+                                    // Continue Watching (second in order per web)
+                                    if !viewModel.continueWatchingItems.isEmpty {
+                                        ContinueWatchingSection(viewModel: viewModel, onTap: { item in
+                                            viewModel.showItemDetails(item)
+                                        })
+                                    }
+
+                                    // Extra sections (Popular on Plex, Trending Now, Watchlist, Genres, Trakt)
+                                    ForEach(viewModel.extraSections) { section in
+                                        LandscapeSectionView(
+                                            section: section,
+                                            onTap: { item in
+                                                viewModel.showItemDetails(item)
+                                            },
+                                            onBrowse: { context in
+                                                presentBrowse(context)
+                                            }
+                                        )
+                                    }
+
+                                    // Keep legacy rows out of this exact web-matching Home for now
+                                }
+                            }
+                            .padding(.vertical, 40)
+                        }
                     }
                 }
-            } else {
-                ScrollView {
-                    VStack(spacing: 0) {
+            }
 
-                        // Billboard Hero or skeleton
-                        Group {
-                            if !viewModel.billboardItems.isEmpty {
-                                BillboardSection(viewModel: viewModel)
-                            } else {
-                                HeroSkeleton()
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 16)
-
-                        // Spacing below hero
-                        Color.clear.frame(height: 24)
-
-                        // Content sections (mirror web order)
-                        VStack(spacing: 40) {
-                            if viewModel.isLoading {
-                                // Continue Watching (landscape)
-                                SkeletonCarouselRow(itemWidth: 420, itemCount: 4, cardType: .landscape)
-                            // Popular on Plex (landscape)
-                            SkeletonCarouselRow(itemWidth: 420, itemCount: 8, cardType: .landscape)
-                            // Trending Now (landscape)
-                            SkeletonCarouselRow(itemWidth: 420, itemCount: 8, cardType: .landscape)
-                            } else {
-                                // Continue Watching (second in order per web)
-                                if !viewModel.continueWatchingItems.isEmpty {
-                                    ContinueWatchingSection(viewModel: viewModel, onTap: { item in
-                                        viewModel.showItemDetails(item)
-                                    })
-                                }
-
-                                // Extra sections (Popular on Plex, Trending Now, Watchlist, Genres, Trakt)
-                                ForEach(viewModel.extraSections) { section in
-                                    LandscapeSectionView(section: section, onTap: { item in
-                                        viewModel.showItemDetails(item)
-                                    })
-                                }
-
-                                // Keep legacy rows out of this exact web-matching Home for now
-                            }
-                        }
-                        .padding(.vertical, 40)
+            if showBrowseModal {
+                BrowseModalView(
+                    isPresented: $showBrowseModal,
+                    viewModel: browseViewModel,
+                    onSelect: { item in
+                        viewModel.showItemDetails(item)
                     }
-                }
+                )
+                .transition(.opacity)
+                .zIndex(2)
             }
         }
         .background(HomeBackground())
@@ -90,6 +113,20 @@ struct HomeView: View {
                 router.homePath.append(DetailsNavigationItem(item: item))
             }
             viewModel.pendingAction = nil
+        }
+        .onChange(of: showBrowseModal) { value in
+            if !value {
+                activeBrowseContext = nil
+                browseViewModel.reset()
+            }
+        }
+    }
+
+    private func presentBrowse(_ context: BrowseContext) {
+        activeBrowseContext = context
+        showBrowseModal = true
+        Task {
+            await browseViewModel.load(context: context)
         }
     }
 }
@@ -157,7 +194,6 @@ struct ContinueWatchingSection: View {
             items: viewModel.continueWatchingItems,
             itemWidth: 420,
             spacing: 16,
-            showSeeAll: false,
             rowHeight: (420 * 0.5) + 56
         ) { item in
             LandscapeCard(item: item, width: 420, onTap: {
@@ -178,7 +214,6 @@ struct OnDeckSection: View {
             items: viewModel.onDeckItems,
             itemWidth: 420,
             spacing: 16,
-            showSeeAll: false,
             rowHeight: (420 * 0.5) + 56
         ) { item in
             LandscapeCard(item: item, width: 420) {
@@ -199,15 +234,11 @@ struct RecentlyAddedSection: View {
             items: viewModel.recentlyAddedItems,
             itemWidth: 420,
             spacing: 16,
-            showSeeAll: true,
             rowHeight: (420 * 0.5) + 56
         ) { item in
             LandscapeCard(item: item, width: 420) {
                 viewModel.showItemDetails(item)
             }
-        } onSeeAll: {
-            // TODO: Navigate to library view
-            print("See all recently added")
         }
     }
 }
@@ -217,20 +248,20 @@ struct RecentlyAddedSection: View {
 struct LibrarySectionView: View {
     let section: LibrarySection
     @ObservedObject var viewModel: HomeViewModel
+    var onBrowse: ((BrowseContext) -> Void)?
 
     var body: some View {
         CarouselRow(
             title: section.title,
             items: section.items,
             itemWidth: 150,
-            showSeeAll: section.totalCount > section.items.count
+            browseAction: section.browseContext.map { context in
+                { onBrowse?(context) }
+            }
         ) { item in
             PosterCard(item: item, width: 150) {
                 viewModel.showItemDetails(item)
             }
-        } onSeeAll: {
-            // TODO: Navigate to library view filtered by section
-            print("See all in \(section.title)")
         }
     }
 }
@@ -240,6 +271,7 @@ struct LibrarySectionView: View {
 struct LandscapeSectionView: View {
     let section: LibrarySection
     var onTap: (MediaItem) -> Void
+    var onBrowse: ((BrowseContext) -> Void)?
 
     var body: some View {
         CarouselRow(
@@ -247,8 +279,10 @@ struct LandscapeSectionView: View {
             items: section.items,
             itemWidth: 420,
             spacing: 16,
-            showSeeAll: false,
-            rowHeight: (420 * 0.5) + 56
+            rowHeight: (420 * 0.5) + 56,
+            browseAction: section.browseContext.map { context in
+                { onBrowse?(context) }
+            }
         ) { item in
             LandscapeCard(item: item, width: 420) {
                 // For non-continue rows, open details by default

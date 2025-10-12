@@ -21,6 +21,23 @@ struct LibrarySection: Identifiable {
     let items: [MediaItem]
     let totalCount: Int
     let libraryKey: String?
+    let browseContext: BrowseContext?
+
+    init(
+        id: String,
+        title: String,
+        items: [MediaItem],
+        totalCount: Int,
+        libraryKey: String?,
+        browseContext: BrowseContext? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.items = items
+        self.totalCount = totalCount
+        self.libraryKey = libraryKey
+        self.browseContext = browseContext
+    }
 }
 
 // Extended MediaItem with additional properties

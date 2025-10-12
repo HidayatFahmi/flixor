@@ -75,6 +75,9 @@
 		A065 /* NewPopularData.swift in Sources */ = {isa = PBXBuildFile; fileRef = B065 /* NewPopularData.swift */; };
 		A066 /* NewPopularViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B066 /* NewPopularViewModel.swift */; };
 		A067 /* NewPopularHero.swift in Sources */ = {isa = PBXBuildFile; fileRef = B067 /* NewPopularHero.swift */; };
+		A200 /* BrowseContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B080 /* BrowseContext.swift */; };
+		A201 /* BrowseModalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B081 /* BrowseModalViewModel.swift */; };
+		A202 /* BrowseModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B082 /* BrowseModalView.swift */; };
 		C8D6025C2E97EBB8002C9348 /* libsoxr.0.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602152E97EBB4002C9348 /* libsoxr.0.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025D2E97EBB8002C9348 /* libswscale.8.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602162E97EBB4002C9348 /* libswscale.8.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025E2E97EBB8002C9348 /* libwebpmux.3.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602172E97EBB4002C9348 /* libwebpmux.3.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -382,6 +385,9 @@
 		C8D602AD2E990765002C9348 /* ThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCache.swift; sourceTree = "<group>"; };
 		C8D602B22E990765002C9348 /* ThumbnailMPVPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailMPVPlayer.swift; sourceTree = "<group>"; };
 		D160AC63894645548212EEF0 /* back-arrow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "back-arrow.png"; sourceTree = "<group>"; };
+		B080 /* BrowseContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseContext.swift; sourceTree = "<group>"; };
+		B081 /* BrowseModalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseModalViewModel.swift; sourceTree = "<group>"; };
+		B082 /* BrowseModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseModalView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -515,6 +521,7 @@
 				B004 /* User.swift */,
 				B005 /* APIError.swift */,
 				B028 /* HomeScreenData.swift */,
+				B080 /* BrowseContext.swift */,
 				B065 /* NewPopularData.swift */,
 				B042 /* PlexServer.swift */,
 				B051 /* PlayerBackend.swift */,
@@ -544,6 +551,7 @@
 				B010 /* PlexAuthViewModel.swift */,
 				B032 /* BackendConfigViewModel.swift */,
 				B029 /* HomeViewModel.swift */,
+				B081 /* BrowseModalViewModel.swift */,
 				B037 /* DetailsViewModel.swift */,
 				B040 /* SearchViewModel.swift */,
 				B041 /* PlayerViewModel.swift */,
@@ -593,6 +601,7 @@
 				B019 /* PosterCard.swift */,
 				B020 /* LandscapeCard.swift */,
 				B022 /* CarouselView.swift */,
+				B082 /* BrowseModalView.swift */,
 				B023 /* BillboardView.swift */,
 				B067 /* NewPopularHero.swift */,
 				B024 /* VirtualGrid.swift */,
@@ -829,12 +838,15 @@
 				A019 /* PosterCard.swift in Sources */,
 				A020 /* LandscapeCard.swift in Sources */,
 				A022 /* CarouselView.swift in Sources */,
+				A202 /* BrowseModalView.swift in Sources */,
 				A023 /* BillboardView.swift in Sources */,
 				A024 /* VirtualGrid.swift in Sources */,
 				A025 /* SkeletonView.swift in Sources */,
 				A027 /* ToastView.swift in Sources */,
 				A028 /* HomeScreenData.swift in Sources */,
+				A200 /* BrowseContext.swift in Sources */,
 				A029 /* HomeViewModel.swift in Sources */,
+				A201 /* BrowseModalViewModel.swift in Sources */,
 				A030 /* HomeView.swift in Sources */,
 				A032 /* BackendConfigViewModel.swift in Sources */,
 				A033 /* BackendConfigView.swift in Sources */,

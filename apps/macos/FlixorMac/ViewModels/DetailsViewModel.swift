@@ -41,6 +41,8 @@ class DetailsViewModel: ObservableObject {
     // Rows
     @Published var related: [MediaItem] = []
     @Published var similar: [MediaItem] = []
+    @Published var relatedBrowseContext: BrowseContext?
+    @Published var similarBrowseContext: BrowseContext?
     // Episodes & Seasons
     @Published var seasons: [Season] = []
     @Published var selectedSeasonKey: String? = nil
@@ -140,6 +142,8 @@ class DetailsViewModel: ObservableObject {
         moodTags = []
         related = []
         similar = []
+        relatedBrowseContext = nil
+        similarBrowseContext = nil
         seasons = []
         selectedSeasonKey = nil
         episodes = []
@@ -340,11 +344,46 @@ class DetailsViewModel: ObservableObject {
         let recs: TRes = try await api.get("/api/tmdb/\(media)/\(id)/recommendations")
         let sim: TRes = try await api.get("/api/tmdb/\(media)/\(id)/similar")
         self.related = (recs.results ?? []).prefix(12).map { i in
-            MediaItem(id: "tmdb:\(media):\(i.id ?? 0)", title: i.title ?? i.name ?? "", type: media == "movie" ? "movie" : "show", thumb: i.poster_path, art: i.backdrop_path, year: nil, rating: nil, duration: nil, viewOffset: nil, summary: nil, grandparentTitle: nil, grandparentThumb: nil, grandparentArt: nil, parentIndex: nil, index: nil)
+            MediaItem(
+                id: "tmdb:\(media):\(i.id ?? 0)",
+                title: i.title ?? i.name ?? "",
+                type: media == "movie" ? "movie" : "show",
+                thumb: i.poster_path.map { "https://image.tmdb.org/t/p/w500\($0)" },
+                art: i.backdrop_path.map { "https://image.tmdb.org/t/p/w780\($0)" },
+                year: nil,
+                rating: nil,
+                duration: nil,
+                viewOffset: nil,
+                summary: nil,
+                grandparentTitle: nil,
+                grandparentThumb: nil,
+                grandparentArt: nil,
+                parentIndex: nil,
+                index: nil
+            )
         }
         self.similar = (sim.results ?? []).prefix(12).map { i in
-            MediaItem(id: "tmdb:\(media):\(i.id ?? 0)", title: i.title ?? i.name ?? "", type: media == "movie" ? "movie" : "show", thumb: i.poster_path, art: i.backdrop_path, year: nil, rating: nil, duration: nil, viewOffset: nil, summary: nil, grandparentTitle: nil, grandparentThumb: nil, grandparentArt: nil, parentIndex: nil, index: nil)
+            MediaItem(
+                id: "tmdb:\(media):\(i.id ?? 0)",
+                title: i.title ?? i.name ?? "",
+                type: media == "movie" ? "movie" : "show",
+                thumb: i.poster_path.map { "https://image.tmdb.org/t/p/w500\($0)" },
+                art: i.backdrop_path.map { "https://image.tmdb.org/t/p/w780\($0)" },
+                year: nil,
+                rating: nil,
+                duration: nil,
+                viewOffset: nil,
+                summary: nil,
+                grandparentTitle: nil,
+                grandparentThumb: nil,
+                grandparentArt: nil,
+                parentIndex: nil,
+                index: nil
+            )
         }
+        let mediaType: TMDBMediaType = (media == "movie") ? .movie : .tv
+        self.relatedBrowseContext = .tmdb(kind: .recommendations, media: mediaType, id: id, displayTitle: self.title)
+        self.similarBrowseContext = .tmdb(kind: .similar, media: mediaType, id: id, displayTitle: self.title)
 
         // Attempt Plex source mapping (GUIDs + external IDs + title search)
         // Skip if we already have Plex data (native Plex items requesting TMDB enhancements)

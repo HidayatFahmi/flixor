@@ -209,54 +209,77 @@ struct CarouselRow<Item: Identifiable, Content: View>: View {
     let items: [Item]
     let itemWidth: CGFloat
     let spacing: CGFloat
-    let showSeeAll: Bool
     let rowHeight: CGFloat?
     let content: (Item) -> Content
-    var onSeeAll: (() -> Void)?
+    let browseAction: (() -> Void)?
+    let browseLabel: String
+
+    @State private var isHeaderHovered = false
+    @FocusState private var browseFocused: Bool
 
     init(
         title: String,
         items: [Item],
         itemWidth: CGFloat = 150,
         spacing: CGFloat = 12,
-        showSeeAll: Bool = true,
         rowHeight: CGFloat? = nil,
+        browseAction: (() -> Void)? = nil,
+        browseLabel: String = "Browse",
         @ViewBuilder content: @escaping (Item) -> Content,
-        onSeeAll: (() -> Void)? = nil
     ) {
         self.title = title
         self.items = items
         self.itemWidth = itemWidth
         self.spacing = spacing
-        self.showSeeAll = showSeeAll
         self.rowHeight = rowHeight
         self.content = content
-        self.onSeeAll = onSeeAll
+        self.browseAction = browseAction
+        self.browseLabel = browseLabel
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
-            HStack {
+            HStack(spacing: 12) {
                 Text(title)
                     .font(.title2.bold())
                     .foregroundStyle(.primary)
+                    .padding(.vertical, 4)
 
-                Spacer()
-
-                if showSeeAll {
-                    Button(action: { onSeeAll?() }) {
+                if let browseAction {
+                    Button(action: browseAction) {
                         HStack(spacing: 4) {
-                            Text("See All")
+                            Text(browseLabel)
                             Image(systemName: "chevron.right")
                         }
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.white.opacity(isHeaderHovered || browseFocused ? 0.12 : 0))
+                        )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .opacity(isHeaderHovered || browseFocused ? 1 : 0)
+                    .offset(x: isHeaderHovered || browseFocused ? 4 : 0)
+                    .animation(.easeOut(duration: 0.24), value: isHeaderHovered)
+                    .animation(.easeOut(duration: 0.24), value: browseFocused)
+                    .allowsHitTesting(isHeaderHovered || browseFocused)
+                    .focusable(true)
+                    .focused($browseFocused)
+                    .accessibilityLabel(Text("\(browseLabel) \(title)"))
                 }
+
+                Spacer()
             }
             .padding(.horizontal, 20)
+            .onHover { hovering in
+                updateHoverState(hovering: hovering)
+            }
+            .contentShape(Rectangle())
 
             // Carousel
             CarouselView(
@@ -267,6 +290,16 @@ struct CarouselRow<Item: Identifiable, Content: View>: View {
                 content: content
             )
             .frame(height: rowHeight ?? (itemWidth * 1.8)) // Approximate fallback for poster cards
+        }
+    }
+
+    private func updateHoverState(hovering: Bool) {
+        withAnimation(.easeOut(duration: 0.2)) {
+            isHeaderHovered = hovering
+            if !hovering && !browseFocused {
+                // keep button visible when focused via keyboard
+                isHeaderHovered = false
+            }
         }
     }
 }
