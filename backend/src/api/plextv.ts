@@ -41,6 +41,45 @@ router.get('/watchlist', requireAuth, async (req: AuthenticatedRequest, res: Res
     });
     const url = `${DISCOVER_BASE}/library/sections/watchlist/all?${params}`;
     const response = await axios.get(url, { headers: { Accept: 'application/json' } });
+
+    // Enrich watchlist items with TMDB IDs from individual metadata
+    const mediaContainer = response.data?.MediaContainer;
+    if (mediaContainer?.Metadata) {
+      const enrichedMetadata = await Promise.all(
+        mediaContainer.Metadata.map(async (item: any) => {
+          try {
+            // Fetch full metadata for this item to get the Guid array
+            if (item.key) {
+              const metadataParams = new URLSearchParams({ 'X-Plex-Token': token });
+              const metadataUrl = `${DISCOVER_BASE}${item.key}?${metadataParams}`;
+              const metadataResponse = await axios.get(metadataUrl, { headers: { Accept: 'application/json' } });
+
+              // Extract TMDB ID from Guid array
+              const guids = metadataResponse.data?.MediaContainer?.Metadata?.[0]?.Guid;
+              if (Array.isArray(guids)) {
+                for (const guidObj of guids) {
+                  const guidId = guidObj.id;
+                  if (guidId?.startsWith('tmdb://') || guidId?.startsWith('themoviedb://')) {
+                    const tmdbId = guidId.replace(/^(tmdb|themoviedb):\/\//, '');
+                    // Add tmdb-prefixed guid to the item for macOS app
+                    // Plex uses type="movie" for movies and type="show" for TV shows
+                    const mediaType = item.type === 'movie' ? 'movie' : 'tv';
+                    item.tmdbGuid = `tmdb:${mediaType}:${tmdbId}`;
+                    logger.debug(`Enriched ${item.title} (type: ${item.type}) with TMDB ID: tmdb:${mediaType}:${tmdbId}`);
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            logger.warn(`Failed to enrich metadata for ${item.title}`, e);
+          }
+          return item;
+        })
+      );
+      mediaContainer.Metadata = enrichedMetadata;
+    }
+
     cacheManager.set('plex', key, response.data, 60); // 60s TTL
     res.json(response.data);
   } catch (e: any) {

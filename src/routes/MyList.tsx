@@ -21,6 +21,7 @@ type WatchlistItem = {
   genres?: string[];
   guid?: string;
   tmdbId?: string;
+  tmdbGuid?: string;
 };
 
 type SortBy = 'dateAdded' | 'title' | 'year' | 'rating';
@@ -102,6 +103,7 @@ export default function MyList() {
           genres: item.Genre?.map((g: any) => g.tag),
           guid: item.guid,
           tmdbId,
+          tmdbGuid: item.tmdbGuid,
         });
       });
     } catch (err) {
@@ -269,7 +271,11 @@ export default function MyList() {
     if (bulkMode) {
       toggleItemSelection(item.id);
     } else {
-      navigate(`/details/${encodeURIComponent(item.id)}`);
+      if (item.id.startsWith('plex')) {
+        navigate(`/details/${encodeURIComponent(item.tmdbGuid || item.id)}`);
+      } else {
+        navigate(`/details/${encodeURIComponent(item.id)}`);
+      }
     }
   };
 

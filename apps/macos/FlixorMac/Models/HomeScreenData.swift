@@ -97,6 +97,7 @@ struct MediaItemFull: Identifiable, Codable {
     let guid: String?
     let Guid: [GuidEntry]?
     let slug: String?
+    let tmdbGuid: String? // TMDB guid enriched by backend for watchlist items
 
     // Library metadata
     let allowSync: Bool?
@@ -131,6 +132,7 @@ struct MediaItemFull: Identifiable, Codable {
         case guid
         case Guid
         case slug
+        case tmdbGuid
         case allowSync
         case librarySectionID
         case librarySectionTitle

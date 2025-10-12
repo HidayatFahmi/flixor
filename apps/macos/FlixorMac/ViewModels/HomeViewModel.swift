@@ -252,14 +252,16 @@ class HomeViewModel: ObservableObject {
 
             var items: [MediaItem] = []
             for m in meta.prefix(20) {
-                // Prefer TMDB id if present in GUID
+                // Use backend-enriched tmdbGuid if available, otherwise use original ID
                 var outId = m.id
-                if let g = m.guid {
-                    if let tid = extractTMDBId(from: g) {
-                        let media = (m.type == "movie") ? "movie" : "tv"
-                        outId = "tmdb:\(media):\(tid)"
-                    }
+                if let tmdbGuid = m.tmdbGuid {
+                    // Backend already formatted as "tmdb:movie:123" or "tmdb:tv:456"
+                    outId = tmdbGuid
+                    print("✅ [Home] Using backend-enriched TMDB ID for \(m.title): \(tmdbGuid)")
+                } else {
+                    print("⚠️ [Home] No TMDB ID available for \(m.title), using original ID: \(outId)")
                 }
+
                 let item = MediaItem(
                     id: outId,
                     title: m.title,

@@ -163,9 +163,9 @@ export default function Home() {
               const wl: any = await plexTvWatchlist();
               const meta = wl?.MediaContainer?.Metadata || [];
               const wlItems: Item[] = meta.slice(0, 12).map((m: any, i: number) => ({
-                id: inferIdFromGuid(m) || `guid:${encodeURIComponent(m.guid||'')}`,
+                id: inferIdFromGuid(m) || `${encodeURIComponent(m.tmdbGuid||'')}`,
                 title: m.title || m.grandparentTitle || 'Title',
-                image: m.thumb || m.parentThumb || m.grandparentThumb,
+                image: m.Image?.find((img: any) => img.type === 'coverArt' || img.type === 'background')?.url,
               }));
               const row: any = { title: 'Watchlist', items: wlItems };
               row.browseKey = '/plextv/watchlist';
@@ -338,7 +338,7 @@ export default function Home() {
 }
 
 function inferIdFromGuid(m: any): string | undefined {
-  const g = String(m.guid || '');
+  const g = String(m.tmdbGuid || '');
   if (!g) return undefined;
   const num = (g.match(/(\d{3,})/) || [])[1];
   if (g.includes('tmdb://') && num) {
