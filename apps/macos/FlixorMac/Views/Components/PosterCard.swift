@@ -12,6 +12,10 @@ struct PosterCard: View {
     let width: CGFloat
     var showTitle: Bool = true
     var showProgress: Bool = false
+    var badge: AnyView? = nil
+    var topTrailingOverlay: AnyView? = nil
+    var isSelected: Bool = false
+    var customImageURL: URL? = nil
     var onTap: (() -> Void)?
 
     @State private var isHovered = false
@@ -36,7 +40,7 @@ struct PosterCard: View {
             }) {
                 ZStack(alignment: .bottom) {
                     CachedAsyncImage(
-                        url: ImageService.shared.thumbURL(for: item, width: Int(width * 2), height: Int(height * 2))
+                        url: customImageURL ?? ImageService.shared.thumbURL(for: item, width: Int(width * 2), height: Int(height * 2))
                     )
                     .aspectRatio(contentMode: .fill)
                     .frame(width: width, height: height)
@@ -45,9 +49,24 @@ struct PosterCard: View {
                     .cornerRadius(12)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(isHovered ? 0.9 : 0.15), lineWidth: isHovered ? 2 : 1)
+                            .stroke(Color.white.opacity(isSelected ? 1.0 : (isHovered ? 0.9 : 0.15)),
+                                   lineWidth: isSelected ? 2 : (isHovered ? 2 : 1))
                     )
-                    .shadow(color: .black.opacity(isHovered ? 0.5 : 0.2), radius: isHovered ? 12 : 6, y: isHovered ? 6 : 3)
+                    .shadow(color: .black.opacity(isSelected ? 0.6 : (isHovered ? 0.5 : 0.2)),
+                           radius: isSelected ? 10 : (isHovered ? 12 : 6),
+                           y: isSelected ? 6 : (isHovered ? 6 : 3))
+                    .overlay(alignment: .topLeading) {
+                        // Badge overlay (e.g., source badges)
+                        if let badge = badge {
+                            badge.padding(8)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        // Top trailing overlay (e.g., watchlist button)
+                        if let overlay = topTrailingOverlay {
+                            overlay.padding(10)
+                        }
+                    }
 
                     // Progress bar
                     if showProgress && progressPercentage > 0 {

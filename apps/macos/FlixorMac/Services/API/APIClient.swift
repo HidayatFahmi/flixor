@@ -340,3 +340,149 @@ struct TraktUserProfile: Decodable {
     let name: String?
     let ids: IDs?
 }
+
+// MARK: - New & Popular API Methods
+
+extension APIClient {
+    // MARK: - TMDB Methods
+
+    /// Get trending content from TMDB
+    /// - Parameters:
+    ///   - mediaType: "all", "movie", or "tv"
+    ///   - timeWindow: "day" or "week"
+    ///   - page: Page number for pagination
+    func getTMDBTrending(mediaType: String, timeWindow: String, page: Int = 1) async throws -> TMDBTrendingResponse {
+        return try await get("/api/tmdb/trending/\(mediaType)/\(timeWindow)", queryItems: [
+            URLQueryItem(name: "page", value: String(page))
+        ])
+    }
+
+    /// Get upcoming movies from TMDB
+    /// - Parameters:
+    ///   - region: Country code (e.g., "US")
+    ///   - page: Page number for pagination
+    func getTMDBUpcoming(region: String = "US", page: Int = 1) async throws -> TMDBMoviesResponse {
+        return try await get("/api/tmdb/movie/upcoming", queryItems: [
+            URLQueryItem(name: "region", value: region),
+            URLQueryItem(name: "page", value: String(page))
+        ])
+    }
+
+    /// Get movie details from TMDB
+    /// - Parameter id: TMDB movie ID
+    func getTMDBMovieDetails(id: String) async throws -> TMDBMovieDetails {
+        return try await get("/api/tmdb/movie/\(id)")
+    }
+
+    /// Get TV show details from TMDB
+    /// - Parameter id: TMDB TV show ID
+    func getTMDBTVDetails(id: String) async throws -> TMDBTVDetails {
+        return try await get("/api/tmdb/tv/\(id)")
+    }
+
+    /// Get videos (trailers) for a movie or TV show
+    /// - Parameters:
+    ///   - mediaType: "movie" or "tv"
+    ///   - id: TMDB ID
+    func getTMDBVideos(mediaType: String, id: String) async throws -> TMDBVideosResponse {
+        return try await get("/api/tmdb/\(mediaType)/\(id)/videos")
+    }
+
+    /// Get images (logos, backdrops, posters) for a movie or TV show
+    /// - Parameters:
+    ///   - mediaType: "movie" or "tv"
+    ///   - id: TMDB ID
+    func getTMDBImages(mediaType: String, id: String) async throws -> TMDBImagesResponse {
+        return try await get("/api/tmdb/\(mediaType)/\(id)/images")
+    }
+
+    // MARK: - Trakt Methods
+
+    /// Get most watched content from Trakt
+    /// - Parameters:
+    ///   - media: "movies" or "shows"
+    ///   - period: "daily", "weekly", "monthly", "yearly", or "all"
+    ///   - limit: Optional limit on number of results
+    func getTraktMostWatched(media: String, period: String, limit: Int? = nil) async throws -> TraktWatchedResponse {
+        var queryItems: [URLQueryItem] = []
+        if let limit = limit {
+            queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        return try await get("/api/trakt/\(media)/watched/\(period)", queryItems: queryItems.isEmpty ? nil : queryItems)
+    }
+
+    /// Get most anticipated content from Trakt
+    /// - Parameters:
+    ///   - media: "movies" or "shows"
+    ///   - limit: Optional limit on number of results
+    func getTraktAnticipated(media: String, limit: Int? = nil) async throws -> TraktAnticipatedResponse {
+        var queryItems: [URLQueryItem] = []
+        if let limit = limit {
+            queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        return try await get("/api/trakt/\(media)/anticipated", queryItems: queryItems.isEmpty ? nil : queryItems)
+    }
+
+    // MARK: - Plex Content Methods
+
+    /// Get Plex libraries
+    func getPlexLibraries() async throws -> [PlexLibrary] {
+        return try await get("/api/plex/libraries")
+    }
+
+    /// Get all items from a Plex library section
+    /// - Parameters:
+    ///   - sectionKey: Library section ID
+    ///   - type: Media type (1 for movies, 2 for shows)
+    ///   - sort: Sort order (e.g., "addedAt:desc", "lastViewedAt:desc", "viewCount:desc")
+    ///   - offset: Pagination offset
+    ///   - limit: Number of items to fetch
+    func getPlexLibraryAll(sectionKey: String, type: Int, sort: String, offset: Int = 0, limit: Int = 50) async throws -> PlexLibraryResponse {
+        return try await get("/api/plex/library/\(sectionKey)/all", queryItems: [
+            URLQueryItem(name: "type", value: String(type)),
+            URLQueryItem(name: "sort", value: sort),
+            URLQueryItem(name: "offset", value: String(offset)),
+            URLQueryItem(name: "limit", value: String(limit))
+        ])
+    }
+
+    /// Get recently added items from Plex (last N days)
+    /// - Parameter days: Number of days to look back (optional)
+    func getPlexRecentlyAdded(days: Int? = nil) async throws -> [PlexMediaItem] {
+        var queryItems: [URLQueryItem] = []
+        if let days = days {
+            queryItems.append(URLQueryItem(name: "days", value: String(days)))
+        }
+        return try await get("/api/plex/recent", queryItems: queryItems.isEmpty ? nil : queryItems)
+    }
+}
+
+// MARK: - Plex Models
+
+struct PlexLibrary: Decodable {
+    let key: String
+    let title: String?
+    let type: String // "movie" or "show"
+}
+
+struct PlexLibraryResponse: Decodable {
+    let size: Int?
+    let totalSize: Int?
+    let offset: Int?
+    let Metadata: [PlexMediaItem]?
+}
+
+struct PlexMediaItem: Decodable {
+    let ratingKey: String
+    let title: String?
+    let type: String?
+    let thumb: String?
+    let art: String?
+    let year: Int?
+    let addedAt: Int?
+    let lastViewedAt: Int?
+    let viewCount: Int?
+    let grandparentTitle: String?
+    let grandparentThumb: String?
+    let parentThumb: String?
+}

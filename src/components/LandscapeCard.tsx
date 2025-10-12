@@ -78,17 +78,6 @@ export default function LandscapeCard({ id, title, image, badge, onClick, layout
       } catch {}
       finally { setAvailabilityChecked(true); }
     })();
-    if (title === "The Polar Express") {
-      console.log('🔍 [LandscapeCard] altImg', altImg);
-      console.log('🔍 [LandscapeCard] image', image);
-      console.log('🔍 [LandscapeCard] id', id);
-      console.log('🔍 [LandscapeCard] kind', kind);
-      console.log('🔍 [LandscapeCard] tmdbId', tmdbId);
-      console.log('🔍 [LandscapeCard] title', title);
-      console.log('🔍 [LandscapeCard] badge', badge);
-      console.log('🔍 [LandscapeCard] onClick', onClick);
-      console.log('🔍 [LandscapeCard] layout', layout);
-    }
   }, [id]);
   const src = altImg || image;
   const wrapperClass = layout === 'grid' ? 'group relative z-0 w-full cursor-pointer' : 'group relative z-0 flex-shrink-0 w-[360px] md:w-[420px] cursor-pointer';

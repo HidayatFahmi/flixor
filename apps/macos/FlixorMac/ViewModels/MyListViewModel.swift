@@ -74,7 +74,8 @@ final class MyListViewModel: ObservableObject {
         let imdbId: String?
 
         var canonicalMediaItem: MediaItem {
-            MediaItem(
+            // Use the item's ID which already prefers TMDB format
+            return MediaItem(
                 id: id,
                 title: title,
                 type: mediaType == .movie ? "movie" : "show",
@@ -290,6 +291,7 @@ final class MyListViewModel: ObservableObject {
             let contentRating: String?
             let addedAt: Int?
             let Genre: [PlexGenre]?
+            let tmdbGuid: String? // Backend-enriched TMDB ID
         }
         struct PlexGenre: Codable { let tag: String? }
 
@@ -297,13 +299,24 @@ final class MyListViewModel: ObservableObject {
         let items = response.MediaContainer?.Metadata ?? []
         return items.compactMap { meta in
             guard let title = meta.title else { return nil }
-            let ratingKey = meta.ratingKey.map { "plex:\($0)" }
             let image = ImageService.shared.plexImageURL(path: meta.thumb, width: 320, height: 480)
             let tmdbId = extractTMDBId(from: meta.guid)
             let imdbId = extractIMDBId(from: meta.guid)
 
+            // Use backend-enriched tmdbGuid if available, fallback to Plex rating key
+            let itemId: String
+            if let tmdbGuid = meta.tmdbGuid {
+                itemId = tmdbGuid
+                print("✅ [MyList] Using backend-enriched TMDB ID for \(title): \(tmdbGuid)")
+            } else if let ratingKey = meta.ratingKey {
+                itemId = "plex:\(ratingKey)"
+                print("⚠️ [MyList] No TMDB ID from backend for \(title), using Plex rating key")
+            } else {
+                itemId = UUID().uuidString
+            }
+
             return WatchlistItem(
-                id: ratingKey ?? (tmdbId != nil ? "tmdb:\(meta.type ?? "movie"):\(tmdbId!)" : UUID().uuidString),
+                id: itemId,
                 title: title,
                 year: meta.year.map { String($0) },
                 imageURL: image,

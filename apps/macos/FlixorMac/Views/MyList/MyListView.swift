@@ -169,22 +169,65 @@ struct MyListView: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: gridSpacing) {
                     ForEach(viewModel.visibleItems) { item in
-                        WatchlistCard(
-                            item: item,
-                            width: cardWidth,
-                            isSelected: viewModel.selectedIDs.contains(item.id),
-                            bulkMode: viewModel.bulkMode,
-                            watchlistController: watchlistController,
-                            onToggleSelection: {
-                                viewModel.toggleSelection(for: item)
-                            },
-                            onRemove: {
-                                Task { await viewModel.remove(item: item) }
-                            },
-                            onOpen: {
+                        ZStack(alignment: .topTrailing) {
+                            PosterCard(
+                                item: item.canonicalMediaItem,
+                                width: cardWidth,
+                                badge: AnyView(SourceBadge(source: item.source)),
+                                topTrailingOverlay: AnyView(
+                                    WatchlistButton(
+                                        canonicalId: item.id,
+                                        mediaType: item.mediaType,
+                                        plexRatingKey: item.plexRatingKey,
+                                        plexGuid: item.plexGuid,
+                                        tmdbId: item.tmdbId,
+                                        imdbId: item.imdbId,
+                                        title: item.title,
+                                        year: Int(item.year ?? ""),
+                                        style: .icon
+                                    )
+                                ),
+                                isSelected: viewModel.selectedIDs.contains(item.id),
+                                customImageURL: item.imageURL,
+                                onTap: {
+                                    if viewModel.bulkMode {
+                                        viewModel.toggleSelection(for: item)
+                                    } else {
+                                        router.myListPath.append(DetailsNavigationItem(item: item.canonicalMediaItem))
+                                    }
+                                }
+                            )
+
+                            // Selection checkbox overlay for bulk mode
+                            if viewModel.bulkMode {
+                                Circle()
+                                    .strokeBorder(Color.white, lineWidth: 2)
+                                    .frame(width: 26, height: 26)
+                                    .background(
+                                        Circle()
+                                            .fill(viewModel.selectedIDs.contains(item.id) ? Color.white : Color.clear)
+                                    )
+                                    .overlay(
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundStyle(viewModel.selectedIDs.contains(item.id) ? Color.black : Color.white.opacity(0.6))
+                                    )
+                                    .padding(10)
+                            }
+                        }
+                        .contextMenu {
+                            Button("View Details") {
                                 router.myListPath.append(DetailsNavigationItem(item: item.canonicalMediaItem))
                             }
-                        )
+                            if item.source == .plex || item.source == .both {
+                                Button("Play") {
+                                    router.myListPath.append(DetailsNavigationItem(item: item.canonicalMediaItem))
+                                }
+                            }
+                            Button("Remove from My List", role: .destructive) {
+                                Task { await viewModel.remove(item: item) }
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, horizontalPadding)
@@ -218,6 +261,8 @@ private struct WatchlistCard: View {
     var onRemove: () -> Void
     var onOpen: () -> Void
 
+    @State private var isHovered = false
+
     var body: some View {
         Button(action: {
             if bulkMode {
@@ -235,9 +280,21 @@ private struct WatchlistCard: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(isSelected ? Color.white : Color.white.opacity(0.15), lineWidth: isSelected ? 2 : 1)
+                                    .stroke(
+                                        isSelected ? Color.white : Color.white.opacity(isHovered ? 0.9 : 0.15),
+                                        lineWidth: isSelected ? 2 : (isHovered ? 2 : 1)
+                                    )
                             )
-                            .shadow(color: .black.opacity(isSelected ? 0.6 : 0.35), radius: isSelected ? 10 : 6, y: isSelected ? 6 : 3)
+                            .shadow(
+                                color: .black.opacity(isSelected ? 0.6 : (isHovered ? 0.5 : 0.2)),
+                                radius: isSelected ? 10 : (isHovered ? 12 : 6),
+                                y: isSelected ? 6 : (isHovered ? 6 : 3)
+                            )
+                            .overlay(alignment: .topLeading) {
+                                // Source badge overlay
+                                SourceBadge(source: item.source)
+                                    .padding(8)
+                            }
 
                         WatchlistButton(
                             canonicalId: item.id,
@@ -252,6 +309,8 @@ private struct WatchlistCard: View {
                         )
                         .padding(10)
                     }
+                    .scaleEffect(isHovered ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.title)
@@ -293,6 +352,9 @@ private struct WatchlistCard: View {
             }
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .contextMenu {
             Button("View Details") {
                 onOpen()
@@ -306,6 +368,36 @@ private struct WatchlistCard: View {
                 onRemove()
             }
         }
+    }
+}
+
+private struct SourceBadge: View {
+    let source: MyListViewModel.Source
+
+    var body: some View {
+        HStack(spacing: 4) {
+            switch source {
+            case .plex:
+                badgeView(text: "PLEX", color: .orange)
+            case .trakt:
+                badgeView(text: "TRAKT", color: .red)
+            case .both:
+                HStack(spacing: 3) {
+                    badgeView(text: "PLEX", color: .orange)
+                    badgeView(text: "TRAKT", color: .red)
+                }
+            }
+        }
+    }
+
+    private func badgeView(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.9), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
     }
 }
 

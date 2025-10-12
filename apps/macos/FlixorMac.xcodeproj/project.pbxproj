@@ -72,6 +72,9 @@
 		A062 /* fullscreen-enter.png in Resources */ = {isa = PBXBuildFile; fileRef = B062 /* fullscreen-enter.png */; };
 		A063 /* playback-speed.png in Resources */ = {isa = PBXBuildFile; fileRef = B063 /* playback-speed.png */; };
 		A064 /* thumbfast.lua in Resources */ = {isa = PBXBuildFile; fileRef = B064 /* thumbfast.lua */; };
+		A065 /* NewPopularData.swift in Sources */ = {isa = PBXBuildFile; fileRef = B065 /* NewPopularData.swift */; };
+		A066 /* NewPopularViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B066 /* NewPopularViewModel.swift */; };
+		A067 /* NewPopularHero.swift in Sources */ = {isa = PBXBuildFile; fileRef = B067 /* NewPopularHero.swift */; };
 		C8D6025C2E97EBB8002C9348 /* libsoxr.0.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602152E97EBB4002C9348 /* libsoxr.0.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025D2E97EBB8002C9348 /* libswscale.8.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602162E97EBB4002C9348 /* libswscale.8.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025E2E97EBB8002C9348 /* libwebpmux.3.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602172E97EBB4002C9348 /* libwebpmux.3.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -298,6 +301,9 @@
 		B062 /* fullscreen-enter.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "fullscreen-enter.png"; sourceTree = "<group>"; };
 		B063 /* playback-speed.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "playback-speed.png"; sourceTree = "<group>"; };
 		B064 /* thumbfast.lua */ = {isa = PBXFileReference; lastKnownFileType = text.script.lua; path = thumbfast.lua; sourceTree = "<group>"; };
+		B065 /* NewPopularData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPopularData.swift; sourceTree = "<group>"; };
+		B066 /* NewPopularViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPopularViewModel.swift; sourceTree = "<group>"; };
+		B067 /* NewPopularHero.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPopularHero.swift; sourceTree = "<group>"; };
 		B999 /* FlixorMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlixorMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8D602152E97EBB4002C9348 /* libsoxr.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libsoxr.0.dylib; path = deps/lib/libsoxr.0.dylib; sourceTree = "<group>"; };
 		C8D602162E97EBB4002C9348 /* libswscale.8.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libswscale.8.dylib; path = deps/lib/libswscale.8.dylib; sourceTree = "<group>"; };
@@ -509,6 +515,7 @@
 				B004 /* User.swift */,
 				B005 /* APIError.swift */,
 				B028 /* HomeScreenData.swift */,
+				B065 /* NewPopularData.swift */,
 				B042 /* PlexServer.swift */,
 				B051 /* PlayerBackend.swift */,
 			);
@@ -542,6 +549,7 @@
 				B041 /* PlayerViewModel.swift */,
 				B043 /* LibraryViewModel.swift */,
 				B047 /* MyListViewModel.swift */,
+				B066 /* NewPopularViewModel.swift */,
 				B046 /* WatchlistController.swift */,
 			);
 			path = ViewModels;
@@ -586,6 +594,7 @@
 				B020 /* LandscapeCard.swift */,
 				B022 /* CarouselView.swift */,
 				B023 /* BillboardView.swift */,
+				B067 /* NewPopularHero.swift */,
 				B024 /* VirtualGrid.swift */,
 				B025 /* SkeletonView.swift */,
 				B027 /* ToastView.swift */,
@@ -779,6 +788,9 @@
 				A062 /* fullscreen-enter.png in Resources */,
 				A063 /* playback-speed.png in Resources */,
 				A064 /* thumbfast.lua in Resources */,
+				A065 /* NewPopularData.swift in Sources */,
+				A066 /* NewPopularViewModel.swift in Sources */,
+				A067 /* NewPopularHero.swift in Sources */,
 				8F8A4EEF11F94AB2B11AD777 /* back-arrow.png in Resources */,
 				4E24577161EC49F795708746 /* subtitles.png in Resources */,
 			);
@@ -846,6 +858,9 @@
 				A050 /* MPVPlayerController.swift in Sources */,
 				A051 /* PlayerBackend.swift in Sources */,
 				A052 /* MPVVideoView.swift in Sources */,
+				A065 /* NewPopularData.swift in Sources */,
+				A066 /* NewPopularViewModel.swift in Sources */,
+				A067 /* NewPopularHero.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

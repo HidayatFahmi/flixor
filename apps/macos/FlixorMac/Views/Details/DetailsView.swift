@@ -465,12 +465,12 @@ private struct SuggestedSections: View {
             if !vm.related.isEmpty {
                 LandscapeSectionView(section: LibrarySection(id: "rel", title: "Related", items: vm.related, totalCount: vm.related.count, libraryKey: nil)) { media in
                     Task { await vm.load(for: media) }
-                }
+                }.padding(.trailing, 60)
             }
             if !vm.similar.isEmpty {
                 LandscapeSectionView(section: LibrarySection(id: "sim", title: "Similar", items: vm.similar, totalCount: vm.similar.count, libraryKey: nil)) { media in
                     Task { await vm.load(for: media) }
-                }
+                }.padding(.trailing, 60)
             }
         }
     }

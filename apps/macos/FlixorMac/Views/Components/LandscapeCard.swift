@@ -39,34 +39,40 @@ struct LandscapeCard: View {
                     .clipped()
                     .background(Color.gray.opacity(0.2))
 
-                // Gradient overlay
-                LinearGradient(
-                    colors: [
-                        .black.opacity(0.0),
-                        .black.opacity(0.75)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(width: width, height: height)
-
-                // Title overlay
-                VStack(alignment: .leading, spacing: 4) {
-                    // For episodes, show the show name (grandparentTitle)
-                    // For movies, show the movie title
-                    Text(item.type == "episode" ? (item.grandparentTitle ?? item.title) : item.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-
-                    if let label = item.episodeLabel {
-                        Text(label)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .lineLimit(1)
-                    }
+                // Gradient overlay (only on hover)
+                if isHovered {
+                    LinearGradient(
+                        colors: [
+                            .black.opacity(0.0),
+                            .black.opacity(0.75)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(width: width, height: height)
+                    .transition(.opacity)
                 }
-                .padding(12)
+
+                // Title overlay (only on hover)
+                if isHovered {
+                    VStack(alignment: .leading, spacing: 4) {
+                        // For episodes, show the show name (grandparentTitle)
+                        // For movies, show the movie title
+                        Text(item.type == "episode" ? (item.grandparentTitle ?? item.title) : item.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+
+                        if let label = item.episodeLabel {
+                            Text(label)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(12)
+                    .transition(.opacity)
+                }
 
                 // Progress bar overlay (optional)
                 if progressPercentage > 0 {

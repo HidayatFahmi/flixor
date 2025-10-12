@@ -14,10 +14,11 @@ struct CarouselView<Item: Identifiable, Content: View>: View {
     let rowHeight: CGFloat?
     let content: (Item) -> Content
 
-    @State private var scrollOffset: CGFloat = 0
+    @State private var currentIndex: Int = 0
     @State private var isHovered = false
     @State private var showLeftArrow = false
     @State private var showRightArrow = true
+    @State private var scrollProxy: ScrollViewProxy?
 
     init(
         items: [Item],
@@ -35,45 +36,65 @@ struct CarouselView<Item: Identifiable, Content: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: spacing) {
-                        ForEach(items) { item in
-                            content(item)
-                                .frame(width: itemWidth)
+            ZStack {
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: spacing) {
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                                content(item)
+                                    .frame(width: itemWidth)
+                                    .id(index)
+                                    .background(
+                                        GeometryReader { itemGeometry in
+                                            Color.clear
+                                                .preference(
+                                                    key: FirstVisiblePreferenceKey.self,
+                                                    value: FirstVisibleItem(
+                                                        index: index,
+                                                        minX: itemGeometry.frame(in: .named("scrollView")).minX
+                                                    )
+                                                )
+                                        }
+                                    )
+                            }
                         }
+                        .padding(.horizontal, 20)
                     }
-                    .padding(.horizontal, 20)
-                    .background(
-                        GeometryReader { scrollGeometry in
-                            Color.clear
-                                .preference(
-                                    key: ScrollOffsetPreferenceKey.self,
-                                    value: scrollGeometry.frame(in: .named("scroll")).origin.x
-                                )
-                        }
-                    )
-                }
-                .coordinateSpace(name: "scroll")
-                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                    scrollOffset = value
-                    updateArrows(geometry: geometry)
+                    .coordinateSpace(name: "scrollView")
+                    .onPreferenceChange(FirstVisiblePreferenceKey.self) { firstVisible in
+                        // Update current index based on the leftmost visible item
+                        // This ensures manual scrolling updates the index
+                        currentIndex = firstVisible.index
+                        updateArrows(viewWidth: geometry.size.width)
+                    }
+                    .onAppear {
+                        scrollProxy = proxy
+                        updateArrows(viewWidth: geometry.size.width)
+                    }
                 }
 
-                // Navigation arrows
-                if isHovered {
-                    HStack {
+                // Navigation arrows overlaid on top
+                if isHovered && (showLeftArrow || showRightArrow) {
+                    HStack(spacing: 0) {
+                        // Left arrow
                         if showLeftArrow {
                             navButton(direction: .left, geometry: geometry)
+                                .padding(.leading, 8)
+                        } else {
+                            Color.clear.frame(width: 60, height: 44)
                         }
 
                         Spacer()
 
+                        // Right arrow
                         if showRightArrow {
                             navButton(direction: .right, geometry: geometry)
+                                .padding(.trailing, 8)
+                        } else {
+                            Color.clear.frame(width: 60, height: 44)
                         }
                     }
-                    .padding(.horizontal, 4)
+                    .allowsHitTesting(true)
                 }
             }
             .onHover { hovering in
@@ -88,33 +109,60 @@ struct CarouselView<Item: Identifiable, Content: View>: View {
         }) {
             ZStack {
                 Circle()
-                    .fill(Color.black.opacity(0.7))
-                    .frame(width: 44, height: 44)
+                    .fill(Color.black.opacity(0.8))
+                    .frame(width: 48, height: 48)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
 
                 Image(systemName: direction == .left ? "chevron.left" : "chevron.right")
-                    .font(.title2)
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
             }
+            .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
         }
         .buttonStyle(.plain)
-        .transition(.opacity.combined(with: .scale))
+        .transition(.opacity)
     }
 
     private func scroll(direction: ScrollDirection, geometry: GeometryProxy) {
-        let scrollDistance = geometry.size.width * 0.7
-        let newOffset = direction == .left ? scrollOffset + scrollDistance : scrollOffset - scrollDistance
+        guard let proxy = scrollProxy else { return }
 
+        let visibleWidth = geometry.size.width - 40 // Account for padding
+        let itemsPerPage = max(1, Int(visibleWidth / (itemWidth + spacing)))
+
+        // Calculate target index based on current index
+        let targetIndex: Int
+        if direction == .left {
+            // Scroll back by one page
+            targetIndex = max(0, currentIndex - itemsPerPage)
+        } else {
+            // Scroll forward by one page
+            // Make sure we don't scroll past the last item that would fill the screen
+            let maxStartIndex = max(0, items.count - itemsPerPage)
+            targetIndex = min(maxStartIndex, currentIndex + itemsPerPage)
+        }
+
+        // Don't update currentIndex here - let the preference change handle it
+        // This ensures consistency between manual scrolling and arrow navigation
+
+        // Scroll to target with animation
         withAnimation(.easeInOut(duration: 0.3)) {
-            scrollOffset = newOffset
+            proxy.scrollTo(targetIndex, anchor: .leading)
         }
     }
 
-    private func updateArrows(geometry: GeometryProxy) {
-        let contentWidth = CGFloat(items.count) * (itemWidth + spacing)
-        let visibleWidth = geometry.size.width
+    private func updateArrows(viewWidth: CGFloat) {
+        // Left arrow shows when not at the start
+        showLeftArrow = currentIndex > 0
 
-        showLeftArrow = scrollOffset < -20
-        showRightArrow = abs(scrollOffset) + visibleWidth < contentWidth - 20
+        // Right arrow shows when there's more content to the right
+        // Calculate how many items can fit in one view
+        let visibleWidth = viewWidth - 40
+        let itemsPerView = Int(visibleWidth / (itemWidth + spacing))
+
+        showRightArrow = currentIndex + itemsPerView < items.count
     }
 
     enum ScrollDirection {
@@ -122,13 +170,35 @@ struct CarouselView<Item: Identifiable, Content: View>: View {
     }
 }
 
-// MARK: - Scroll Offset Preference Key
+// MARK: - First Visible Item Preference Key
 
-struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+struct FirstVisibleItem: Equatable {
+    let index: Int
+    let minX: CGFloat
+}
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+struct FirstVisiblePreferenceKey: PreferenceKey {
+    static var defaultValue = FirstVisibleItem(index: 0, minX: 0)
+
+    static func reduce(value: inout FirstVisibleItem, nextValue: () -> FirstVisibleItem) {
+        let next = nextValue()
+        // Keep the item that's closest to position 20 (left edge after padding)
+        // Items to the left of the viewport have minX < 0
+        // Items visible have minX around 20
+        // Items to the right have minX > viewport width
+
+        // If current value is far left (< 10) and next is closer to visible area, use next
+        if value.minX < 10 && next.minX >= 10 {
+            value = next
+        }
+        // If next is closer to the left edge (around 20), use it
+        else if next.minX >= 10 && next.minX < value.minX {
+            value = next
+        }
+        // If both are in visible range, use the one with lower index (leftmost item)
+        else if value.minX >= 10 && next.minX >= 10 && next.index < value.index {
+            value = next
+        }
     }
 }
 
