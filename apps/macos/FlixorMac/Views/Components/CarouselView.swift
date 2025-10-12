@@ -238,7 +238,7 @@ struct CarouselRow<Item: Identifiable, Content: View>: View {
             spacing: 16,
             rowHeight: (350 * 0.5) + 80 // approx backdrop + text
         ) { item in
-            ContinueCard(item: item, width: 350)
+            LandscapeCard(item: item, width: 350, showProgressBar: true)
         }
     }
     .padding(.vertical)

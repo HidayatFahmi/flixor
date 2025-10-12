@@ -30,7 +30,6 @@
 		A018 /* ImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B018 /* ImageService.swift */; };
 		A019 /* PosterCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B019 /* PosterCard.swift */; };
 		A020 /* LandscapeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B020 /* LandscapeCard.swift */; };
-		A021 /* ContinueCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B021 /* ContinueCard.swift */; };
 		A022 /* CarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B022 /* CarouselView.swift */; };
 		A023 /* BillboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B023 /* BillboardView.swift */; };
 		A024 /* VirtualGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = B024 /* VirtualGrid.swift */; };
@@ -257,7 +256,6 @@
 		B018 /* ImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageService.swift; sourceTree = "<group>"; };
 		B019 /* PosterCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosterCard.swift; sourceTree = "<group>"; };
 		B020 /* LandscapeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandscapeCard.swift; sourceTree = "<group>"; };
-		B021 /* ContinueCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinueCard.swift; sourceTree = "<group>"; };
 		B022 /* CarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarouselView.swift; sourceTree = "<group>"; };
 		B023 /* BillboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillboardView.swift; sourceTree = "<group>"; };
 		B024 /* VirtualGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualGrid.swift; sourceTree = "<group>"; };
@@ -586,7 +584,6 @@
 				B017 /* CachedAsyncImage.swift */,
 				B019 /* PosterCard.swift */,
 				B020 /* LandscapeCard.swift */,
-				B021 /* ContinueCard.swift */,
 				B022 /* CarouselView.swift */,
 				B023 /* BillboardView.swift */,
 				B024 /* VirtualGrid.swift */,
@@ -819,7 +816,6 @@
 				A018 /* ImageService.swift in Sources */,
 				A019 /* PosterCard.swift in Sources */,
 				A020 /* LandscapeCard.swift in Sources */,
-				A021 /* ContinueCard.swift in Sources */,
 				A022 /* CarouselView.swift in Sources */,
 				A023 /* BillboardView.swift in Sources */,
 				A024 /* VirtualGrid.swift in Sources */,

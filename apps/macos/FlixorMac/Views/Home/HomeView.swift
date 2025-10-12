@@ -178,11 +178,11 @@ struct ContinueWatchingSection: View {
             itemWidth: 420,
             spacing: 16,
             showSeeAll: false,
-            rowHeight: (420 * 0.5) + 80
+            rowHeight: (420 * 0.5) + 56
         ) { item in
-            ContinueCard(item: item, width: 420) {
+            LandscapeCard(item: item, width: 420, onTap: {
                 onTap(item)
-            }
+            }, showProgressBar: true)
         }
     }
 }

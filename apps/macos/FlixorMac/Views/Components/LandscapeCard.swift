@@ -11,6 +11,7 @@ struct LandscapeCard: View {
     let item: MediaItem
     let width: CGFloat
     var onTap: (() -> Void)?
+    var showProgressBar: Bool = false // Optional progress bar overlay
 
     @State private var isHovered = false
     @State private var altURL: URL? = nil
@@ -19,57 +20,82 @@ struct LandscapeCard: View {
         width * 0.5 // 2:1 aspect to match web rows
     }
 
+    private var progressPercentage: Double {
+        guard showProgressBar,
+              let duration = item.duration, duration > 0,
+              let viewOffset = item.viewOffset else {
+            return 0
+        }
+        return (Double(viewOffset) / Double(duration)) * 100.0
+    }
+
     var body: some View {
         Button(action: { onTap?() }) {
-            VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .bottomLeading) {
-                    // Backdrop image — use same pipeline as ContinueCard
-                    CachedAsyncImage(url: altURL ?? ImageService.shared.continueWatchingURL(for: item, width: Int(width * 2), height: Int(height * 2)))
+            ZStack(alignment: .bottomLeading) {
+                // Backdrop image
+                CachedAsyncImage(url: altURL ?? ImageService.shared.continueWatchingURL(for: item, width: Int(width * 2), height: Int(height * 2)))
                     .aspectRatio(contentMode: .fill)
                     .frame(width: width, height: height)
                     .clipped()
                     .background(Color.gray.opacity(0.2))
 
-                    // Subtle hover zoom
-                    Color.clear
-                        .frame(width: width, height: height)
-                        .overlay(
-                            LinearGradient(
-                                colors: [
-                                    .black.opacity(0.0),
-                                    .black.opacity(0.75)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-
-                    // Title overlay
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.title)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-
-                        if let label = item.episodeLabel {
-                            Text(label)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(1)
-                        }
-                    }
-                    .padding(12)
-                }
-                .cornerRadius(14)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(isHovered ? 0.9 : 0.15), lineWidth: isHovered ? 2 : 1)
+                // Gradient overlay
+                LinearGradient(
+                    colors: [
+                        .black.opacity(0.0),
+                        .black.opacity(0.75)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
-                .shadow(color: .black.opacity(isHovered ? 0.5 : 0.3), radius: isHovered ? 15 : 8, y: isHovered ? 8 : 4)
+                .frame(width: width, height: height)
+
+                // Title overlay
+                VStack(alignment: .leading, spacing: 4) {
+                    // For episodes, show the show name (grandparentTitle)
+                    // For movies, show the movie title
+                    Text(item.type == "episode" ? (item.grandparentTitle ?? item.title) : item.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    if let label = item.episodeLabel {
+                        Text(label)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(12)
+
+                // Progress bar overlay (optional)
+                if progressPercentage > 0 {
+                    VStack {
+                        Spacer()
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(height: 6)
+
+                                Rectangle()
+                                    .fill(Color(red: 229/255, green: 9/255, blue: 20/255))
+                                    .frame(width: geometry.size.width * CGFloat(min(100, max(0, progressPercentage))) / 100.0, height: 6)
+                            }
+                        }
+                        .frame(height: 6)
+                    }
+                }
             }
+            .frame(width: width, height: height)
+            .cornerRadius(14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.white.opacity(isHovered ? 0.9 : 0.15), lineWidth: isHovered ? 2 : 1)
+            )
+            .shadow(color: .black.opacity(isHovered ? 0.5 : 0.3), radius: isHovered ? 15 : 8, y: isHovered ? 8 : 4)
         }
         .buttonStyle(.plain)
-        .frame(width: width)
         .scaleEffect(isHovered ? 1.03 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
         .onHover { hovering in
