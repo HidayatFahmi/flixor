@@ -162,10 +162,19 @@ struct DetailsView: View {
     private func playContent() {
         // If we have a playableId from the ViewModel, use it
         if let playableId = vm.playableId {
+            // CRITICAL: Preserve episode type from original item
+            // vm.mediaKind only stores "movie" or "tv", but episodes need type="episode"
+            let mediaType: String = {
+                if item.type == "episode" {
+                    return "episode"
+                }
+                return vm.mediaKind ?? item.type
+            }()
+
             let playerItem = MediaItem(
                 id: playableId,
                 title: vm.title.isEmpty ? item.title : vm.title,
-                type: vm.mediaKind ?? item.type,
+                type: mediaType,
                 thumb: item.thumb,
                 art: item.art,
                 year: vm.year.flatMap { Int($0) },
@@ -173,11 +182,11 @@ struct DetailsView: View {
                 duration: vm.runtime.map { $0 * 60000 },
                 viewOffset: nil,
                 summary: vm.overview.isEmpty ? nil : vm.overview,
-                grandparentTitle: nil,
-                grandparentThumb: nil,
-                grandparentArt: nil,
-                parentIndex: nil,
-                index: nil
+                grandparentTitle: item.grandparentTitle,
+                grandparentThumb: item.grandparentThumb,
+                grandparentArt: item.grandparentArt,
+                parentIndex: item.parentIndex,
+                index: item.index
             )
             appendToCurrentTabPath(playerItem)
         } else {

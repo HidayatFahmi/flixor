@@ -9,10 +9,10 @@ import SwiftUI
 
 enum NavItem: String, CaseIterable, Identifiable {
     case home = "Home"
-    case search = "Search"
     case library = "Library"
     case myList = "My List"
     case newPopular = "New & Popular"
+    case search = "Search"
 
     var id: String { rawValue }
 }
