@@ -17,10 +17,53 @@ enum NavItem: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// Wrapper type for DetailsView navigation to avoid conflicts with MediaItem
+struct DetailsNavigationItem: Hashable {
+    let item: MediaItem
+}
 
-// Simple navigation router to manage NavigationPath
+
+// Observable object to track current tab selection
+final class MainViewState: ObservableObject {
+    @Published var selectedTab: NavItem = .home
+}
+
+// Navigation router with per-tab navigation paths
 final class NavigationRouter: ObservableObject {
-    @Published var path = NavigationPath()
+    @Published var homePath = NavigationPath()
+    @Published var searchPath = NavigationPath()
+    @Published var libraryPath = NavigationPath()
+    @Published var myListPath = NavigationPath()
+    @Published var newPopularPath = NavigationPath()
+
+    func pathBinding(for tab: NavItem) -> Binding<NavigationPath> {
+        Binding(
+            get: {
+                switch tab {
+                case .home: return self.homePath
+                case .search: return self.searchPath
+                case .library: return self.libraryPath
+                case .myList: return self.myListPath
+                case .newPopular: return self.newPopularPath
+                }
+            },
+            set: { newValue in
+                switch tab {
+                case .home: self.homePath = newValue
+                case .search: self.searchPath = newValue
+                case .library: self.libraryPath = newValue
+                case .myList: self.myListPath = newValue
+                case .newPopular: self.newPopularPath = newValue
+                }
+            }
+        )
+    }
+
+    // For backwards compatibility with existing code
+    var path: NavigationPath {
+        get { homePath }
+        set { homePath = newValue }
+    }
 }
 
 struct RootView: View {
@@ -50,14 +93,14 @@ struct RootView: View {
 }
 
 struct MainView: View {
-    @State private var selectedTab: NavItem = .home
     @State private var showingSettings = false
     @EnvironmentObject var sessionManager: SessionManager
     @StateObject private var router = NavigationRouter()
+    @StateObject private var mainViewState = MainViewState()
 
     var body: some View {
-        NavigationStack(path: $router.path) {
-            destinationView(for: selectedTab)
+        NavigationStack(path: router.pathBinding(for: mainViewState.selectedTab)) {
+            destinationView(for: mainViewState.selectedTab)
                 // Centralize PlayerView presentation here to avoid inheriting padding
                 .navigationDestination(for: MediaItem.self) { item in
                     PlayerView(item: item)
@@ -65,9 +108,12 @@ struct MainView: View {
                         .ignoresSafeArea(.all, edges: .all)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .navigationDestination(for: DetailsNavigationItem.self) { navItem in
+                    DetailsView(item: navItem.item)
+                }
         }
-        .id(selectedTab) // Recreate entire NavigationStack when tab changes
         .environmentObject(router)
+        .environmentObject(mainViewState)
         .toolbar {
             // Logo on left
             ToolbarItem(placement: .navigation) {
@@ -88,10 +134,15 @@ struct MainView: View {
                     ForEach(NavItem.allCases) { item in
                         ToolbarNavButton(
                             item: item,
-                            isActive: selectedTab == item,
+                            isActive: mainViewState.selectedTab == item,
                             onTap: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
-                                    selectedTab = item
+                                    // If clicking the current tab, pop to root
+                                    if mainViewState.selectedTab == item {
+                                        popToRoot(for: item)
+                                    } else {
+                                        mainViewState.selectedTab = item
+                                    }
                                 }
                             }
                         )
@@ -137,6 +188,31 @@ struct MainView: View {
         .toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
         .sheet(isPresented: $showingSettings) {
             SettingsView()
+        }
+    }
+
+    private func popToRoot(for tab: NavItem) {
+        switch tab {
+        case .home:
+            if router.homePath.count > 0 {
+                router.homePath.removeLast(router.homePath.count)
+            }
+        case .search:
+            if router.searchPath.count > 0 {
+                router.searchPath.removeLast(router.searchPath.count)
+            }
+        case .library:
+            if router.libraryPath.count > 0 {
+                router.libraryPath.removeLast(router.libraryPath.count)
+            }
+        case .myList:
+            if router.myListPath.count > 0 {
+                router.myListPath.removeLast(router.myListPath.count)
+            }
+        case .newPopular:
+            if router.newPopularPath.count > 0 {
+                router.newPopularPath.removeLast(router.newPopularPath.count)
+            }
         }
     }
 

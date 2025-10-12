@@ -9,9 +9,7 @@ import SwiftUI
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
-    @State private var activePlayer: MediaItem? = nil
-    @State private var selectedDetails: MediaItem? = nil
-    @State private var goDetails: Bool = false
+    @EnvironmentObject private var router: NavigationRouter
 
     var body: some View {
         Group {
@@ -24,10 +22,6 @@ struct HomeView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Hidden link used for programmatic navigation to full-screen Details
-                        NavigationLink(destination: OptionalDetailsDestination(item: selectedDetails), isActive: $goDetails) { EmptyView() }
-                            .frame(width: 0, height: 0)
-                            .hidden()
 
                         // Billboard Hero or skeleton
                         Group {
@@ -91,25 +85,11 @@ struct HomeView: View {
             guard let action = action else { return }
             switch action {
             case .play(let item):
-                activePlayer = item
+                router.homePath.append(item)
             case .details(let item):
-                selectedDetails = item
-                goDetails = true
+                router.homePath.append(DetailsNavigationItem(item: item))
             }
             viewModel.pendingAction = nil
-        }
-        .sheet(item: $activePlayer) { item in
-            PlayerView(item: item)
-        }
-    }
-}
-
-// Hidden NavigationLink to push Details full-screen on macOS 13+
-private struct OptionalDetailsDestination: View {
-    let item: MediaItem?
-    var body: some View {
-        Group {
-            if let item = item { DetailsView(item: item) } else { EmptyView() }
         }
     }
 }

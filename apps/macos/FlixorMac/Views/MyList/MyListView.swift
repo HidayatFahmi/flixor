@@ -9,9 +9,9 @@ import SwiftUI
 
 struct MyListView: View {
     @EnvironmentObject private var watchlistController: WatchlistController
+    @EnvironmentObject private var router: NavigationRouter
+    @EnvironmentObject private var mainViewState: MainViewState
     @StateObject private var viewModel = MyListViewModel()
-    @State private var selectedMediaItem: MediaItem?
-    @State private var pushDetails = false
 
     private let horizontalPadding: CGFloat = 64
     private let gridSpacing: CGFloat = 18
@@ -19,17 +19,6 @@ struct MyListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NavigationLink(
-                destination: Group {
-                    if let media = selectedMediaItem {
-                        DetailsView(item: media)
-                    }
-                },
-                isActive: $pushDetails
-            ) { EmptyView() }
-                .frame(width: 0, height: 0)
-                .hidden()
-
             header
                 .padding(.horizontal, horizontalPadding)
                 .padding(.top, 32)
@@ -193,8 +182,7 @@ struct MyListView: View {
                                 Task { await viewModel.remove(item: item) }
                             },
                             onOpen: {
-                                selectedMediaItem = item.canonicalMediaItem
-                                pushDetails = true
+                                router.myListPath.append(DetailsNavigationItem(item: item.canonicalMediaItem))
                             }
                         )
                     }

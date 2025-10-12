@@ -13,6 +13,7 @@ struct PlayerView: View {
     let item: MediaItem
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var router: NavigationRouter
+    @EnvironmentObject private var mainViewState: MainViewState
     @StateObject private var viewModel: PlayerViewModel
     @State private var showControls = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -23,6 +24,7 @@ struct PlayerView: View {
     @State private var isPiPActive = false
     @State private var isCursorHidden = false
     @State private var mpvPiPViewController: NSViewController?
+    @State private var keyboardMonitor: Any?
     @AppStorage("playerBackend") private var selectedBackend: String = PlayerBackend.avplayer.rawValue
 
     private var playerBackend: PlayerBackend {
@@ -222,10 +224,15 @@ struct PlayerView: View {
             }
         }
         .onDisappear {
+            // Cancel any pending hide controls task FIRST to prevent cursor hiding after dismiss
+            hideControlsTask?.cancel()
+            hideControlsTask = nil
+
             viewModel.onDisappear()
             stopMouseTracking()
             stopKeyboardMonitoring()
-            showCursor() // Ensure cursor is visible when leaving
+            forceShowCursor() // Force cursor to be visible when leaving
+
             // Exit fullscreen when leaving player
             if isFullScreen {
                 toggleFullScreen()
@@ -238,13 +245,20 @@ struct PlayerView: View {
             startKeyboardMonitoring()
 
             // Setup navigation callback for next episode
-            viewModel.onPlayNext = { [weak router] nextItem in
+            viewModel.onPlayNext = { [weak router, weak mainViewState] nextItem in
+                guard let router = router, let mainViewState = mainViewState else { return }
                 // Dismiss current player
                 dismiss()
                 // Small delay to ensure dismiss completes
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    // Navigate to next episode
-                    router?.path.append(nextItem)
+                    // Navigate to next episode using correct tab path
+                    switch mainViewState.selectedTab {
+                    case .home: router.homePath.append(nextItem)
+                    case .search: router.searchPath.append(nextItem)
+                    case .library: router.libraryPath.append(nextItem)
+                    case .myList: router.myListPath.append(nextItem)
+                    case .newPopular: router.newPopularPath.append(nextItem)
+                    }
                 }
             }
         }
@@ -257,7 +271,14 @@ struct PlayerView: View {
 
     private func startKeyboardMonitoring() {
         #if os(macOS)
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
+        // Remove any existing monitor first
+        if let monitor = keyboardMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyboardMonitor = nil
+        }
+
+        // Add new monitor and store the reference
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
             if handleKeyDown(event) {
                 return nil // Event handled, don't propagate
             }
@@ -267,7 +288,13 @@ struct PlayerView: View {
     }
 
     private func stopKeyboardMonitoring() {
-        // NSEvent monitors are automatically removed when the view disappears
+        #if os(macOS)
+        // IMPORTANT: Must explicitly remove the event monitor
+        if let monitor = keyboardMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyboardMonitor = nil
+        }
+        #endif
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
@@ -363,7 +390,7 @@ struct PlayerView: View {
     private func stopMouseTracking() {
         mouseMovementTimer?.invalidate()
         mouseMovementTimer = nil
-        showCursor() // Always show cursor when leaving player
+        forceShowCursor() // Force show cursor when stopping tracking
     }
 
     private func hideCursor() {
@@ -384,6 +411,19 @@ struct PlayerView: View {
         #endif
     }
 
+    private func forceShowCursor() {
+        #if os(macOS)
+        // NSCursor.hide() uses an internal counter, so we need to ensure we fully unhide
+        // Call unhide multiple times to clear any pending hides
+        for _ in 0..<10 {
+            NSCursor.unhide()
+        }
+        // Additionally, use setHiddenUntilMouseMoves to ensure cursor becomes visible
+        NSCursor.setHiddenUntilMouseMoves(false)
+        isCursorHidden = false
+        #endif
+    }
+
     private func onMouseMoved() {
         // Show cursor on mouse movement
         showCursor()
@@ -398,13 +438,16 @@ struct PlayerView: View {
 
     private func scheduleHideControls() {
         hideControlsTask?.cancel()
-        hideControlsTask = Task {
+        hideControlsTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds of inactivity
-            if !Task.isCancelled && viewModel.isPlaying {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showControls = false
-                }
-                // Hide cursor when controls hide and video is playing
+            // Double-check task wasn't cancelled and we're still playing
+            guard !Task.isCancelled && viewModel.isPlaying else { return }
+
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showControls = false
+            }
+            // Only hide cursor if task is still valid (not cancelled)
+            if !Task.isCancelled {
                 hideCursor()
             }
         }

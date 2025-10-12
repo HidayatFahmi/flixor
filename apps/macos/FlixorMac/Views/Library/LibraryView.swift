@@ -9,8 +9,8 @@ import SwiftUI
 
 struct LibraryView: View {
     @StateObject private var viewModel = LibraryViewModel()
-    @State private var selectedItem: MediaItem?
-    @State private var showDetails = false
+    @EnvironmentObject private var router: NavigationRouter
+    @EnvironmentObject private var mainViewState: MainViewState
 
     private let horizontalPadding: CGFloat = 64
     private let gridSpacing: CGFloat = 18
@@ -18,20 +18,6 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Hidden NavigationLink for programmatic navigation
-            NavigationLink(
-                destination: Group {
-                    if let item = selectedItem {
-                        DetailsView(item: item)
-                    }
-                },
-                isActive: $showDetails
-            ) {
-                EmptyView()
-            }
-            .frame(width: 0, height: 0)
-            .hidden()
-
             LibraryFilterBarView(viewModel: viewModel) { section in
                 viewModel.selectSection(section)
             }
@@ -109,8 +95,7 @@ struct LibraryView: View {
                             width: cardWidth,
                             showTitle: true
                         ) {
-                            selectedItem = entry.media
-                            showDetails = true
+                            router.libraryPath.append(DetailsNavigationItem(item: entry.media))
                         }
                         .onAppear {
                             viewModel.loadMoreIfNeeded(currentItem: entry)
@@ -134,8 +119,7 @@ struct LibraryView: View {
             LazyVStack(spacing: 14) {
                 ForEach(viewModel.visibleItems) { entry in
                     LibraryListRow(entry: entry) {
-                        selectedItem = entry.media
-                        showDetails = true
+                        router.libraryPath.append(DetailsNavigationItem(item: entry.media))
                     }
                     .padding(.horizontal, horizontalPadding)
                     .onAppear {

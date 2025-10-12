@@ -9,8 +9,8 @@ import SwiftUI
 
 struct SearchView: View {
     @StateObject private var viewModel = SearchViewModel()
-    @State private var selectedDetails: MediaItem? = nil
-    @State private var goDetails: Bool = false
+    @EnvironmentObject private var router: NavigationRouter
+    @EnvironmentObject private var mainViewState: MainViewState
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -19,13 +19,6 @@ struct SearchView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    // Hidden link for navigation to Details
-                    NavigationLink(destination: OptionalSearchDetailsDestination(item: selectedDetails), isActive: $goDetails) {
-                        EmptyView()
-                    }
-                    .frame(width: 0, height: 0)
-                    .hidden()
-
                     // Search Input Field
                     SearchInputField(query: $viewModel.query)
                         .padding(.horizontal, 20)
@@ -67,7 +60,7 @@ struct SearchView: View {
     }
 
     private func navigateToDetails(item: SearchViewModel.SearchResult) {
-        selectedDetails = MediaItem(
+        let mediaItem = MediaItem(
             id: item.id,
             title: item.title,
             type: item.type.rawValue,
@@ -84,7 +77,7 @@ struct SearchView: View {
             parentIndex: nil,
             index: nil
         )
-        goDetails = true
+        router.searchPath.append(DetailsNavigationItem(item: mediaItem))
     }
 }
 
@@ -661,21 +654,6 @@ struct SearchBackground: View {
     }
 }
 
-// MARK: - Optional Details Destination
-
-private struct OptionalSearchDetailsDestination: View {
-    let item: MediaItem?
-
-    var body: some View {
-        Group {
-            if let item = item {
-                DetailsView(item: item)
-            } else {
-                EmptyView()
-            }
-        }
-    }
-}
 #if DEBUG && canImport(PreviewsMacros)
 #Preview {
     SearchView()

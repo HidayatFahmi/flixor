@@ -109,6 +109,7 @@ struct DetailsView: View {
     @StateObject private var vm = DetailsViewModel()
     @State private var activeTab: String = "SUGGESTED"
     @EnvironmentObject private var router: NavigationRouter
+    @EnvironmentObject private var mainView: MainViewState
 
     var body: some View {
         GeometryReader { proxy in
@@ -178,9 +179,19 @@ struct DetailsView: View {
                 parentIndex: nil,
                 index: nil
             )
-            router.path.append(playerItem)
+            appendToCurrentTabPath(playerItem)
         } else {
-            router.path.append(item)
+            appendToCurrentTabPath(item)
+        }
+    }
+
+    private func appendToCurrentTabPath(_ item: MediaItem) {
+        switch mainView.selectedTab {
+        case .home: router.homePath.append(item)
+        case .search: router.searchPath.append(item)
+        case .library: router.libraryPath.append(item)
+        case .myList: router.myListPath.append(item)
+        case .newPopular: router.newPopularPath.append(item)
         }
     }
 
@@ -202,7 +213,7 @@ struct DetailsView: View {
             parentIndex: nil,
             index: nil
         )
-        router.path.append(playerItem)
+        appendToCurrentTabPath(playerItem)
     }
 }
 
@@ -212,6 +223,8 @@ private struct DetailsHeroSection: View {
     @ObservedObject var vm: DetailsViewModel
     let onPlay: () -> Void
     let layout: DetailsLayoutMetrics
+
+    @State private var isOverviewExpanded = false
 
     private var metaItems: [String] {
         var parts: [String] = []
@@ -285,12 +298,11 @@ private struct DetailsHeroSection: View {
                 }
 
                 if !vm.overview.isEmpty {
-                    Text(vm.overview)
-                        .font(.system(size: 16))
-                        .foregroundStyle(.white.opacity(0.88))
-                        .lineSpacing(4)
-                        .frame(maxWidth: layout.heroTextMaxWidth, alignment: .leading)
-                        .multilineTextAlignment(.leading)
+                    CollapsibleOverview(
+                        text: vm.overview,
+                        maxWidth: layout.heroTextMaxWidth,
+                        isExpanded: $isOverviewExpanded
+                    )
                 }
 
                 ViewThatFits {
@@ -1299,6 +1311,108 @@ private struct FlowChipGroup: View {
 }
 
 private struct Badge: View { let text: String; var body: some View { Text(text).font(.caption).padding(.horizontal, 8).padding(.vertical, 4).background(Color.white.opacity(0.12)).cornerRadius(6) } }
+
+// MARK: - Collapsible Overview Component
+
+private struct CollapsibleOverview: View {
+    let text: String
+    let maxWidth: CGFloat
+    @Binding var isExpanded: Bool
+
+    @State private var intrinsicHeight: CGFloat = 0
+    @State private var truncatedHeight: CGFloat = 0
+
+    private var isTruncated: Bool {
+        intrinsicHeight > truncatedHeight && truncatedHeight > 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(text)
+                .font(.system(size: 16))
+                .foregroundStyle(.white.opacity(0.88))
+                .lineSpacing(4)
+                .lineLimit(isExpanded ? nil : 2)
+                .frame(maxWidth: maxWidth, alignment: .leading)
+                .multilineTextAlignment(.leading)
+                .background(
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: TruncatedHeightPreferenceKey.self,
+                            value: geometry.size.height
+                        )
+                    }
+                )
+                .onPreferenceChange(TruncatedHeightPreferenceKey.self) { height in
+                    if !isExpanded {
+                        truncatedHeight = height
+                    }
+                }
+                .background(
+                    // Hidden text without line limit to get intrinsic height
+                    Text(text)
+                        .font(.system(size: 16))
+                        .lineSpacing(4)
+                        .frame(maxWidth: maxWidth, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .hidden()
+                        .background(
+                            GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: IntrinsicHeightPreferenceKey.self,
+                                    value: geometry.size.height
+                                )
+                            }
+                        )
+                        .onPreferenceChange(IntrinsicHeightPreferenceKey.self) { height in
+                            intrinsicHeight = height
+                        }
+                )
+
+            if isTruncated {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Text(isExpanded ? "Less" : "More")
+                            .font(.system(size: 14, weight: .semibold))
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.18))
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.white.opacity(0.25), lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: maxWidth, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct TruncatedHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct IntrinsicHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
 
 #if DEBUG && canImport(PreviewsMacros)
 #Preview {
