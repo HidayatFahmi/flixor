@@ -23,9 +23,11 @@ import {
 import { TopBarStore, useTopBarStore } from '../components/TopBarStore';
 import HeroCard from '../components/HeroCard';
 
-export default function Home({ api }: { api: MobileApi }) {
+export default function Home({ api, onLogout }: { api: MobileApi; onLogout: () => Promise<void> }) {
   const nav: any = useNavigation();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [welcome, setWelcome] = useState<string>('');
   const [continueItems, setContinueItems] = useState<any[]>([]);
   const [trendingMovies, setTrendingMovies] = useState<any[]>([]);
@@ -150,11 +152,30 @@ export default function Home({ api }: { api: MobileApi }) {
     return { title: 'Featured', image: undefined, subtitle: undefined };
   };
 
+  // Helper function to retry with timeout
+  const fetchWithRetry = async <T,>(fn: () => Promise<T>, retries = 3, timeout = 10000): Promise<T> => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Request timeout')), timeout)
+        );
+        return await Promise.race([fn(), timeoutPromise]);
+      } catch (err) {
+        console.log(`[Home] Attempt ${i + 1}/${retries} failed:`, err);
+        if (i === retries - 1) throw err;
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, i), 5000)));
+      }
+    }
+    throw new Error('Max retries exceeded');
+  };
+
   useEffect(() => {
     (async () => {
       try {
+        setError(null);
         console.log('[Home] session fetch');
-        const session = await api.session();
+        const session = await fetchWithRetry(() => api.session(), 3, 10000);
         const name = session?.user?.username || 'User';
         setWelcome(`Welcome, ${name}`);
 
@@ -213,12 +234,29 @@ export default function Home({ api }: { api: MobileApi }) {
         setTraktMyWatchlist(tval(3));
         setTraktHistory(tval(4));
         setTraktRecommendations(tval(5));
-      } catch {
+      } catch (err: any) {
+        console.error('[Home] Fatal error loading data:', err);
+        const errorMsg = err?.message || 'Backend unreachable';
+        setError(errorMsg);
+
+        // After 3 failed attempts, log out user
+        const currentRetry = retryCount + 1;
+        setRetryCount(currentRetry);
+
+        if (currentRetry >= 3) {
+          console.log('[Home] Max retries exceeded, logging out user');
+          // Give user 2 seconds to see the error before logging out
+          setTimeout(async () => {
+            await onLogout();
+          }, 2000);
+        } else {
+          console.log('[Home] Retry count:', currentRetry);
+        }
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [retryCount]);
 
   // Fetch logo for hero once popularOnPlexTmdb is loaded
   useEffect(() => {
@@ -271,10 +309,31 @@ export default function Home({ api }: { api: MobileApi }) {
     })();
   }, [isFocused]);
 
-  if (loading) {
+  if (loading || error) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#fff" />
+      <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        {error ? (
+          <>
+            <Text style={{ color: '#fff', fontSize: 18, marginBottom: 10, textAlign: 'center' }}>
+              Unable to connect to backend
+            </Text>
+            <Text style={{ color: '#999', fontSize: 14, marginBottom: 20, textAlign: 'center' }}>
+              {error}
+            </Text>
+            <Text style={{ color: '#999', fontSize: 14, marginBottom: 20, textAlign: 'center' }}>
+              Retry {retryCount}/3
+            </Text>
+            {retryCount >= 3 ? (
+              <Text style={{ color: '#e50914', fontSize: 14, textAlign: 'center' }}>
+                Logging out... Please check your backend URL and try again.
+              </Text>
+            ) : (
+              <ActivityIndicator color="#fff" />
+            )}
+          </>
+        ) : (
+          <ActivityIndicator color="#fff" />
+        )}
       </View>
     );
   }

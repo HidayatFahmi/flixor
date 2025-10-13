@@ -23,8 +23,6 @@
 		A012 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B012 /* LibraryView.swift */; };
 		A014 /* NewPopularView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B014 /* NewPopularView.swift */; };
 		A015 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B015 /* SettingsView.swift */; };
-		A163 /* PlexServersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B163 /* PlexServersView.swift */; };
-		A164 /* ServerConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B164 /* ServerConnectionView.swift */; };
 		A016 /* UserDefaults+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B016 /* UserDefaults+Extensions.swift */; };
 		A017 /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B017 /* CachedAsyncImage.swift */; };
 		A018 /* ImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B018 /* ImageService.swift */; };
@@ -75,11 +73,16 @@
 		A065 /* NewPopularData.swift in Sources */ = {isa = PBXBuildFile; fileRef = B065 /* NewPopularData.swift */; };
 		A066 /* NewPopularViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B066 /* NewPopularViewModel.swift */; };
 		A067 /* NewPopularHero.swift in Sources */ = {isa = PBXBuildFile; fileRef = B067 /* NewPopularHero.swift */; };
+		A163 /* PlexServersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B163 /* PlexServersView.swift */; };
+		A164 /* ServerConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B164 /* ServerConnectionView.swift */; };
 		A200 /* BrowseContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B080 /* BrowseContext.swift */; };
 		A201 /* BrowseModalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B081 /* BrowseModalViewModel.swift */; };
 		A202 /* BrowseModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B082 /* BrowseModalView.swift */; };
 		A203 /* PersonModalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B083 /* PersonModalViewModel.swift */; };
 		A204 /* PersonModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B084 /* PersonModalView.swift */; };
+		C8BA62692E9C5ABE00CFE44C /* NewPopularData.swift in Resources */ = {isa = PBXBuildFile; fileRef = B065 /* NewPopularData.swift */; };
+		C8BA626A2E9C5ABE00CFE44C /* NewPopularViewModel.swift in Resources */ = {isa = PBXBuildFile; fileRef = B066 /* NewPopularViewModel.swift */; };
+		C8BA626B2E9C5ABE00CFE44C /* NewPopularHero.swift in Resources */ = {isa = PBXBuildFile; fileRef = B067 /* NewPopularHero.swift */; };
 		C8D6025C2E97EBB8002C9348 /* libsoxr.0.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602152E97EBB4002C9348 /* libsoxr.0.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025D2E97EBB8002C9348 /* libswscale.8.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602162E97EBB4002C9348 /* libswscale.8.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025E2E97EBB8002C9348 /* libwebpmux.3.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602172E97EBB4002C9348 /* libwebpmux.3.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -257,8 +260,6 @@
 		B012 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		B014 /* NewPopularView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPopularView.swift; sourceTree = "<group>"; };
 		B015 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		B163 /* PlexServersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexServersView.swift; sourceTree = "<group>"; };
-		B164 /* ServerConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConnectionView.swift; sourceTree = "<group>"; };
 		B016 /* UserDefaults+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDefaults+Extensions.swift"; sourceTree = "<group>"; };
 		B017 /* CachedAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedAsyncImage.swift; sourceTree = "<group>"; };
 		B018 /* ImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageService.swift; sourceTree = "<group>"; };
@@ -309,6 +310,13 @@
 		B065 /* NewPopularData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPopularData.swift; sourceTree = "<group>"; };
 		B066 /* NewPopularViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPopularViewModel.swift; sourceTree = "<group>"; };
 		B067 /* NewPopularHero.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewPopularHero.swift; sourceTree = "<group>"; };
+		B080 /* BrowseContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseContext.swift; sourceTree = "<group>"; };
+		B081 /* BrowseModalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseModalViewModel.swift; sourceTree = "<group>"; };
+		B082 /* BrowseModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseModalView.swift; sourceTree = "<group>"; };
+		B083 /* PersonModalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonModalViewModel.swift; sourceTree = "<group>"; };
+		B084 /* PersonModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonModalView.swift; sourceTree = "<group>"; };
+		B163 /* PlexServersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexServersView.swift; sourceTree = "<group>"; };
+		B164 /* ServerConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConnectionView.swift; sourceTree = "<group>"; };
 		B999 /* FlixorMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlixorMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8D602152E97EBB4002C9348 /* libsoxr.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libsoxr.0.dylib; path = deps/lib/libsoxr.0.dylib; sourceTree = "<group>"; };
 		C8D602162E97EBB4002C9348 /* libswscale.8.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libswscale.8.dylib; path = deps/lib/libswscale.8.dylib; sourceTree = "<group>"; };
@@ -387,11 +395,6 @@
 		C8D602AD2E990765002C9348 /* ThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCache.swift; sourceTree = "<group>"; };
 		C8D602B22E990765002C9348 /* ThumbnailMPVPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailMPVPlayer.swift; sourceTree = "<group>"; };
 		D160AC63894645548212EEF0 /* back-arrow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "back-arrow.png"; sourceTree = "<group>"; };
-		B080 /* BrowseContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseContext.swift; sourceTree = "<group>"; };
-		B081 /* BrowseModalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseModalViewModel.swift; sourceTree = "<group>"; };
-		B082 /* BrowseModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseModalView.swift; sourceTree = "<group>"; };
-		B083 /* PersonModalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonModalViewModel.swift; sourceTree = "<group>"; };
-		B084 /* PersonModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonModalView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -803,9 +806,9 @@
 				A062 /* fullscreen-enter.png in Resources */,
 				A063 /* playback-speed.png in Resources */,
 				A064 /* thumbfast.lua in Resources */,
-				A065 /* NewPopularData.swift in Sources */,
-				A066 /* NewPopularViewModel.swift in Sources */,
-				A067 /* NewPopularHero.swift in Sources */,
+				C8BA62692E9C5ABE00CFE44C /* NewPopularData.swift in Resources */,
+				C8BA626A2E9C5ABE00CFE44C /* NewPopularViewModel.swift in Resources */,
+				C8BA626B2E9C5ABE00CFE44C /* NewPopularHero.swift in Resources */,
 				8F8A4EEF11F94AB2B11AD777 /* back-arrow.png in Resources */,
 				4E24577161EC49F795708746 /* subtitles.png in Resources */,
 			);
@@ -1012,13 +1015,21 @@
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = FlixorMac/FlixorMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = GGZ5B2R5VP;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/deps/include";
 				INFOPLIST_KEY_CFBundleDisplayName = Flixor;
@@ -1036,6 +1047,12 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.flixor.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = YES;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "FlixorMac/FlixorMac-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -1049,13 +1066,21 @@
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = FlixorMac/FlixorMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = GGZ5B2R5VP;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/deps/include";
 				INFOPLIST_KEY_CFBundleDisplayName = Flixor;
@@ -1073,6 +1098,12 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.flixor.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = YES;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "FlixorMac/FlixorMac-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

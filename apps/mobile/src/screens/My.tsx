@@ -9,7 +9,7 @@ import { TopBarStore, useTopBarStore } from '../components/TopBarStore';
 let WebBrowser: any = null;
 try { WebBrowser = require('expo-web-browser'); } catch {}
 
-export default function My({ api }: { api: MobileApi }) {
+export default function My({ api, onLogout }: { api: MobileApi; onLogout: () => Promise<void> }) {
   const nav: any = useNavigation();
   const isFocused = useIsFocused();
   const [loading, setLoading] = useState(true);
@@ -203,6 +203,23 @@ export default function My({ api }: { api: MobileApi }) {
     }
   }
 
+  async function handleLogout() {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout? You will need to sign in again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await onLogout();
+          }
+        }
+      ]
+    );
+  }
+
   const Card = ({ children, title }: { children: any; title?: string }) => (
     <View style={styles.card}>
       {title && <Text style={styles.cardTitle}>{title}</Text>}
@@ -381,6 +398,14 @@ export default function My({ api }: { api: MobileApi }) {
           <Text style={styles.hint}>
             Mobile Plex client with Netflix-style UI
           </Text>
+        </Card>
+
+        {/* Logout Section */}
+        <Card title="Account">
+          <Text style={styles.description}>
+            Sign out of your account and return to the onboarding screen.
+          </Text>
+          <Button onPress={handleLogout} title="Logout" variant="secondary" />
         </Card>
       </Animated.ScrollView>
 

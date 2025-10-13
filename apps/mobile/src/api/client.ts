@@ -40,6 +40,13 @@ export class MobileApi {
     if (token) AsyncStorage.setItem(KEY_TOKEN, token); else AsyncStorage.removeItem(KEY_TOKEN);
   }
 
+  async logout(): Promise<void> {
+    this.token = null;
+    await AsyncStorage.removeItem(KEY_TOKEN);
+    await AsyncStorage.removeItem(KEY_BASE_URL);
+    await apiCache.clear();
+  }
+
   headers(additional?: Record<string, string>) {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.token) h['Authorization'] = `Bearer ${this.token}`;

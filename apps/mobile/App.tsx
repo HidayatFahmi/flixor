@@ -38,6 +38,13 @@ export default function App() {
   const [api, setApi] = useState<MobileApi | null>(null);
   const [init, setInit] = useState(true);
 
+  const handleLogout = async () => {
+    if (api) {
+      await api.logout();
+    }
+    setApi(null);
+  };
+
   useEffect(() => {
     (async () => {
       const loaded = await MobileApi.load();
@@ -60,7 +67,7 @@ export default function App() {
     return (
       <View style={{ flex:1 }}>
         <HomeStack.Navigator screenOptions={{ headerShown: false }}>
-          <HomeStack.Screen name="HomeScreen">{() => <Home api={api!} />}</HomeStack.Screen>
+          <HomeStack.Screen name="HomeScreen">{() => <Home api={api!} onLogout={handleLogout} />}</HomeStack.Screen>
           <HomeStack.Screen name="Details" component={Details} options={{ presentation: 'transparentModal', animation: 'fade', gestureEnabled: false }} />
           <HomeStack.Screen name="Player" component={Player} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
           <HomeStack.Screen name="Library" component={Library} options={{ presentation: 'card', animation: 'fade' }} />
@@ -113,7 +120,7 @@ export default function App() {
             </View>
           )}
         </Tab.Screen>
-        <Tab.Screen name="MyTab" options={{ title: 'My Netflix' }}>{() => api ? <My api={api} /> : <View style={{ flex:1, backgroundColor:'#000' }} />}</Tab.Screen>
+        <Tab.Screen name="MyTab" options={{ title: 'My Netflix' }}>{() => api ? <My api={api} onLogout={handleLogout} /> : <View style={{ flex:1, backgroundColor:'#000' }} />}</Tab.Screen>
       </Tab.Navigator>
     );
   };
