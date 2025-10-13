@@ -65,6 +65,12 @@ class DetailsViewModel: ObservableObject {
     @Published var mediaKind: String? // "movie" or "tv"
     @Published var playableId: String? // plex:... or mapped id
 
+    // Season-specific state
+    @Published var isSeason: Bool = false           // Flag for season-only mode
+    @Published var parentShowKey: String?           // Link to parent show
+    @Published var episodeCount: Int?               // Total episodes
+    @Published var watchedCount: Int?               // Watched episodes
+
     private let api = APIClient.shared
     private var lastFetchedRatingsKey: String?
 
@@ -118,6 +124,14 @@ class DetailsViewModel: ObservableObject {
         let Genre: [PlexTag]?
         let Role: [PlexRole]?
         let Media: [PlexMedia]?
+
+        // Season-specific fields
+        let parentRatingKey: String?     // Parent show
+        let parentTitle: String?          // Show name
+        let index: Int?                   // Season number
+        let leafCount: Int?               // Episode count
+        let viewedLeafCount: Int?         // Watched count
+        let key: String?                  // Children endpoint
     }
 
     func load(for item: MediaItem) async {
@@ -155,6 +169,10 @@ class DetailsViewModel: ObservableObject {
         subtitleTracks = []
         plexRatingKey = nil
         plexGuid = nil
+        isSeason = false
+        parentShowKey = nil
+        episodeCount = nil
+        watchedCount = nil
 
         print("🎬 [Details] Loading details for item: \(item.id), title: \(item.title)")
 
@@ -177,6 +195,13 @@ class DetailsViewModel: ObservableObject {
                 do {
                     print("📦 [Details] Fetching Plex metadata for ratingKey: \(rk)")
                     let meta: PlexMeta = try await api.get("/api/plex/metadata/\(rk)")
+
+                    // Check if type is season
+                    if meta.type == "season" {
+                        await loadSeasonDirect(meta: meta, ratingKey: rk)
+                        return
+                    }
+
                     mediaKind = (meta.type == "movie") ? "movie" : "tv"
                     title = meta.title ?? item.title
                     overview = meta.summary ?? ""
@@ -240,6 +265,13 @@ class DetailsViewModel: ObservableObject {
                 do {
                     print("📦 [Details] Fetching Plex metadata for ratingKey: \(rk)")
                     let meta: PlexMeta = try await api.get("/api/plex/metadata/\(rk)")
+
+                    // Check if type is season
+                    if meta.type == "season" {
+                        await loadSeasonDirect(meta: meta, ratingKey: rk)
+                        return
+                    }
+
                     mediaKind = (meta.type == "movie") ? "movie" : "tv"
                     title = meta.title ?? item.title
                     overview = meta.summary ?? ""
@@ -359,7 +391,11 @@ class DetailsViewModel: ObservableObject {
                 grandparentThumb: nil,
                 grandparentArt: nil,
                 parentIndex: nil,
-                index: nil
+                index: nil,
+                parentRatingKey: nil,
+                parentTitle: nil,
+                leafCount: nil,
+                viewedLeafCount: nil
             )
         }
         self.similar = (sim.results ?? []).prefix(12).map { i in
@@ -378,7 +414,11 @@ class DetailsViewModel: ObservableObject {
                 grandparentThumb: nil,
                 grandparentArt: nil,
                 parentIndex: nil,
-                index: nil
+                index: nil,
+                parentRatingKey: nil,
+                parentTitle: nil,
+                leafCount: nil,
+                viewedLeafCount: nil
             )
         }
         let mediaType: TMDBMediaType = (media == "movie") ? .movie : .tv
@@ -742,6 +782,98 @@ class DetailsViewModel: ObservableObject {
             externalRatings = ExternalRatings(imdb: imdbModel, rottenTomatoes: rtModel)
         } catch {
             print("⚠️ [Details] Ratings fetch failed: \(error)")
+        }
+    }
+
+    // MARK: - Season Direct Load
+
+    private func loadSeasonDirect(meta: PlexMeta, ratingKey: String) async {
+        print("🎬 [loadSeasonDirect] Loading season-only view for: \(meta.title ?? "Season")")
+
+        isSeason = true
+        mediaKind = "tv"
+
+        // Basic metadata
+        title = meta.title ?? "Season"
+        overview = meta.summary ?? ""
+        parentShowKey = meta.parentRatingKey
+        episodeCount = meta.leafCount
+        watchedCount = meta.viewedLeafCount
+
+        // Parent show title for better context
+        if let parentTitle = meta.parentTitle {
+            title = "\(parentTitle) - \(meta.title ?? "Season")"
+        }
+
+        // Images
+        if let thumb = meta.thumb,
+           let u = ImageService.shared.plexImageURL(path: thumb, width: 600, height: 900) {
+            posterURL = u
+        }
+        if let art = meta.art,
+           let u = ImageService.shared.plexImageURL(path: art, width: 1920, height: 1080) {
+            backdropURL = u
+        }
+
+        addBadge("Plex")
+        playableId = "plex:\(ratingKey)"
+        plexRatingKey = ratingKey
+
+        // TMDB enhancement (optional)
+        if let tm = meta.Guid?.compactMap({ $0.id }).first(where: { $0.contains("tmdb://") || $0.contains("themoviedb://") }),
+           let tid = tm.components(separatedBy: "://").last {
+            tmdbId = tid
+            plexGuid = tm
+            print("📺 [loadSeasonDirect] Found TMDB GUID: \(tid), fetching enhancements")
+            do {
+                try await fetchTMDBSeasonEnhancements(tmdbId: tid, seasonNumber: meta.index)
+            } catch {
+                print("⚠️ [loadSeasonDirect] TMDB enhancements failed: \(error)")
+            }
+        }
+
+        // Load episodes directly (NO season picker)
+        seasons = []
+        selectedSeasonKey = nil  // Null = season-only mode
+        await loadPlexEpisodes(seasonKey: ratingKey)
+
+        print("✅ [loadSeasonDirect] Season-only view loaded successfully")
+    }
+
+    // MARK: - TMDB Season Enhancements
+
+    private func fetchTMDBSeasonEnhancements(tmdbId: String, seasonNumber: Int?) async throws {
+        guard let num = seasonNumber else { return }
+
+        // Fetch TMDB season details
+        struct TMDBSeason: Codable {
+            let name: String?
+            let overview: String?
+            let poster_path: String?
+            let episodes: [TMDBEpisode]?
+        }
+        struct TMDBEpisode: Codable {
+            let episode_number: Int
+            let name: String
+            let overview: String?
+            let still_path: String?
+        }
+
+        print("📡 [fetchTMDBSeasonEnhancements] Fetching TMDB season \(num) for show \(tmdbId)")
+        let season: TMDBSeason = try await api.get("/api/tmdb/tv/\(tmdbId)/season/\(num)")
+
+        // Use TMDB data if better
+        if let name = season.name, !name.isEmpty {
+            title = title.replacingOccurrences(of: "Season \(num)", with: name)
+            print("✅ [fetchTMDBSeasonEnhancements] Updated title from TMDB: \(name)")
+        }
+        if let overview = season.overview, !overview.isEmpty {
+            self.overview = overview
+            print("✅ [fetchTMDBSeasonEnhancements] Updated overview from TMDB")
+        }
+        if let poster = season.poster_path {
+            posterURL = ImageService.shared.proxyImageURL(url: "https://image.tmdb.org/t/p/w500\(poster)")
+            print("✅ [fetchTMDBSeasonEnhancements] Updated poster from TMDB")
         }
     }
 

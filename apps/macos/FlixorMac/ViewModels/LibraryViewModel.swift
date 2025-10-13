@@ -429,7 +429,11 @@ final class LibraryViewModel: ObservableObject {
                 grandparentThumb: media.grandparentThumb,
                 grandparentArt: media.grandparentArt,
                 parentIndex: media.parentIndex,
-                index: media.index
+                index: media.index,
+                parentRatingKey: media.parentRatingKey,
+                parentTitle: media.parentTitle,
+                leafCount: media.leafCount,
+                viewedLeafCount: media.viewedLeafCount
             )
         }
 

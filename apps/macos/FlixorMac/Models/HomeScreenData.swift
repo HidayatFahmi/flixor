@@ -103,6 +103,12 @@ struct MediaItemFull: Identifiable, Codable {
     let parentIndex: Int?
     let index: Int?
 
+    // Season specific
+    let parentRatingKey: String?
+    let parentTitle: String?
+    let leafCount: Int?
+    let viewedLeafCount: Int?
+
     // Additional metadata
     let addedAt: Int?
     let lastViewedAt: Int?
@@ -139,6 +145,10 @@ struct MediaItemFull: Identifiable, Codable {
         case grandparentRatingKey
         case parentIndex
         case index
+        case parentRatingKey
+        case parentTitle
+        case leafCount
+        case viewedLeafCount
         case addedAt
         case lastViewedAt
         case contentRating
@@ -158,12 +168,20 @@ struct MediaItemFull: Identifiable, Codable {
 
     // Convert to MediaItem
     func toMediaItem() -> MediaItem {
-        MediaItem(
+        // For seasons, if art is missing, try to use grandparentArt (show's backdrop)
+        let effectiveArt: String?
+        if type == "season" && (art == nil || art?.isEmpty == true) {
+            effectiveArt = grandparentArt
+        } else {
+            effectiveArt = art
+        }
+
+        return MediaItem(
             id: id,
             title: title,
             type: type,
             thumb: thumb,
-            art: art,
+            art: effectiveArt,
             year: year,
             rating: rating,
             duration: duration,
@@ -173,7 +191,11 @@ struct MediaItemFull: Identifiable, Codable {
             grandparentThumb: grandparentThumb,
             grandparentArt: grandparentArt,
             parentIndex: parentIndex,
-            index: index
+            index: index,
+            parentRatingKey: parentRatingKey,
+            parentTitle: parentTitle,
+            leafCount: leafCount,
+            viewedLeafCount: viewedLeafCount
         )
     }
 }

@@ -83,12 +83,23 @@ class ImageService {
 
     /// Returns a backdrop-style image for continue watching cards.
     /// For episodes, uses the show's backdrop (grandparentArt/grandparentThumb).
-    /// For movies, uses the regular backdrop (art/thumb).
+    /// For seasons, uses the show's backdrop (art should contain parent show's art).
+    /// For movies/shows, uses the regular backdrop (art/thumb).
     func continueWatchingURL(for item: MediaItem, width: Int = 600, height: Int = 338) -> URL? {
         // For episodes, use show's backdrop (grandparent)
         if item.type == "episode" {
             // Priority: grandparentArt > grandparentThumb > art > thumb
             let path = item.grandparentArt ?? item.grandparentThumb ?? item.art ?? item.thumb
+            if let p = path, p.hasPrefix("http") {
+                return proxyImageURL(url: p, width: width, height: height)
+            }
+            return plexImageURL(path: path, width: width, height: height, quality: 70)
+        }
+
+        // For seasons, use parent show's backdrop (should be in art field)
+        // If art is missing, we can't fall back to thumb as that would be the season poster
+        if item.type == "season" {
+            let path = item.art
             if let p = path, p.hasPrefix("http") {
                 return proxyImageURL(url: p, width: width, height: height)
             }
@@ -122,7 +133,7 @@ enum TMDBImageSize: String {
 struct MediaItem: Identifiable, Codable {
     let id: String // ratingKey
     let title: String
-    let type: String // movie, show, episode
+    let type: String // movie, show, episode, season
     let thumb: String?
     let art: String?
     let year: Int?
@@ -137,6 +148,12 @@ struct MediaItem: Identifiable, Codable {
     let grandparentArt: String?
     let parentIndex: Int?
     let index: Int?
+
+    // Season specific fields
+    let parentRatingKey: String?     // Parent show ID
+    let parentTitle: String?          // Parent show name
+    let leafCount: Int?               // Episode count
+    let viewedLeafCount: Int?         // Watched episode count
 
     enum CodingKeys: String, CodingKey {
         case id = "ratingKey"
@@ -154,5 +171,9 @@ struct MediaItem: Identifiable, Codable {
         case grandparentArt
         case parentIndex
         case index
+        case parentRatingKey
+        case parentTitle
+        case leafCount
+        case viewedLeafCount
     }
 }

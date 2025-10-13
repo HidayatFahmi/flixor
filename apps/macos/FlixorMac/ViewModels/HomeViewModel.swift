@@ -189,7 +189,11 @@ class HomeViewModel: ObservableObject {
                 grandparentThumb: m.grandparentThumb,
                 grandparentArt: m.grandparentArt,
                 parentIndex: m.parentIndex,
-                index: m.index
+                index: m.index,
+                parentRatingKey: nil,
+                parentTitle: nil,
+                leafCount: nil,
+                viewedLeafCount: nil
             )
         }
     }
@@ -229,7 +233,11 @@ class HomeViewModel: ObservableObject {
                 grandparentThumb: nil,
                 grandparentArt: nil,
                 parentIndex: nil,
-                index: nil
+                index: nil,
+                parentRatingKey: nil,
+                parentTitle: nil,
+                leafCount: nil,
+                viewedLeafCount: nil
             )
             mapped.append(m)
         }
@@ -291,7 +299,11 @@ class HomeViewModel: ObservableObject {
                     grandparentThumb: m.grandparentThumb,
                     grandparentArt: m.grandparentArt,
                     parentIndex: m.parentIndex,
-                    index: m.index
+                    index: m.index,
+                    parentRatingKey: m.parentRatingKey,
+                    parentTitle: m.parentTitle,
+                    leafCount: m.leafCount,
+                    viewedLeafCount: m.viewedLeafCount
                 )
                 items.append(item)
             }
@@ -598,7 +610,11 @@ class HomeViewModel: ObservableObject {
                             grandparentThumb: nil,
                             grandparentArt: nil,
                             parentIndex: nil,
-                            index: nil
+                            index: nil,
+                parentRatingKey: nil,
+                parentTitle: nil,
+                leafCount: nil,
+                viewedLeafCount: nil
                         )
                         return m
                     } catch { return nil }
@@ -662,7 +678,11 @@ class HomeViewModel: ObservableObject {
                             grandparentThumb: item.grandparentThumb,
                             grandparentArt: item.grandparentArt,
                             parentIndex: item.parentIndex,
-                            index: item.index
+                            index: item.index,
+                            parentRatingKey: nil,
+                            parentTitle: nil,
+                            leafCount: nil,
+                            viewedLeafCount: nil
                         )
                         return (index, enriched)
                     }

@@ -207,7 +207,7 @@ struct DetailsView: View {
         .navigationTitle("")
         .task {
             await vm.load(for: item)
-            if vm.mediaKind == "tv" { activeTab = "EPISODES" }
+            if vm.mediaKind == "tv" || vm.isSeason { activeTab = "EPISODES" }
         }
         .onChange(of: showBrowseModal) { value in
             if !value {
@@ -251,7 +251,11 @@ struct DetailsView: View {
                 grandparentThumb: item.grandparentThumb,
                 grandparentArt: item.grandparentArt,
                 parentIndex: item.parentIndex,
-                index: item.index
+                index: item.index,
+                parentRatingKey: nil,
+                parentTitle: nil,
+                leafCount: nil,
+                viewedLeafCount: nil
             )
             appendToCurrentTabPath(playerItem)
         } else {
@@ -303,7 +307,11 @@ struct DetailsView: View {
             grandparentThumb: nil,
             grandparentArt: nil,
             parentIndex: nil,
-            index: nil
+            index: nil,
+            parentRatingKey: nil,
+            parentTitle: nil,
+            leafCount: nil,
+            viewedLeafCount: nil
         )
         appendToCurrentTabPath(playerItem)
     }
@@ -500,39 +508,99 @@ private struct DetailsHeroSection: View {
     }
 
     @ViewBuilder private var heroFacts: some View {
-        heroFactBlock(title: "Cast", value: castSummary)
-        heroFactBlock(title: "Genres", value: vm.genres.isEmpty ? "—" : vm.genres.joined(separator: ", "))
-        heroFactBlock(title: vm.mediaKind == "tv" ? "This Show Is" : "This Movie Is", value: vm.moodTags.isEmpty ? "—" : vm.moodTags.joined(separator: ", "))
+        // Show episodes count for seasons instead of cast
+        if vm.isSeason {
+            if let episodeCount = vm.episodeCount {
+                let watchedCount = vm.watchedCount ?? 0
+                heroFactBlock(title: "Episodes", value: "\(episodeCount) episodes • \(watchedCount) watched")
+            }
+        } else {
+            heroFactBlock(title: "Cast", value: castSummary)
+        }
+
+        if !vm.genres.isEmpty {
+            heroFactBlock(title: "Genres", value: vm.genres.joined(separator: ", "))
+        }
+
+        if !vm.moodTags.isEmpty {
+            let title = vm.isSeason ? "This Season Is" : (vm.mediaKind == "tv" ? "This Show Is" : "This Movie Is")
+            heroFactBlock(title: title, value: vm.moodTags.joined(separator: ", "))
+        }
     }
 
     @ViewBuilder private var actionButtons: some View {
-        Button(action: onPlay) {
-            HStack(spacing: 8) {
-                Image(systemName: "play.fill")
-                Text("Play").fontWeight(.semibold)
+        // For seasons, show "View Show" button instead of "Play"
+        if vm.isSeason {
+            if let parentKey = vm.parentShowKey {
+                Button(action: {
+                    let showItem = MediaItem(
+                        id: "plex:\(parentKey)",
+                        title: vm.title,
+                        type: "show",
+                        thumb: nil,
+                        art: nil,
+                        year: nil,
+                        rating: nil,
+                        duration: nil,
+                        viewOffset: nil,
+                        summary: nil,
+                        grandparentTitle: nil,
+                        grandparentThumb: nil,
+                        grandparentArt: nil,
+                        parentIndex: nil,
+                        index: nil,
+                        parentRatingKey: nil,
+                        parentTitle: nil,
+                        leafCount: nil,
+                        viewedLeafCount: nil
+                    )
+                    // Navigate to show details using parent key
+                    Task {
+                        await vm.load(for: showItem)
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "tv.fill")
+                        Text("View Show").fontWeight(.semibold)
+                    }
+                    .font(.system(size: 16))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 26)
+                    .padding(.vertical, 12)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
-            .font(.system(size: 16))
-            .foregroundStyle(.black)
-            .padding(.horizontal, 26)
-            .padding(.vertical, 12)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .buttonStyle(.plain)
+        } else {
+            Button(action: onPlay) {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill")
+                    Text("Play").fontWeight(.semibold)
+                }
+                .font(.system(size: 16))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 26)
+                .padding(.vertical, 12)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .buttonStyle(.plain)
 
-        if let watchlistId = canonicalWatchlistId,
-           let mediaType = watchlistMediaType {
-            WatchlistButton(
-                canonicalId: watchlistId,
-                mediaType: mediaType,
-                plexRatingKey: vm.plexRatingKey,
-                plexGuid: vm.plexGuid,
-                tmdbId: vm.tmdbId,
-                imdbId: nil,
-                title: vm.title,
-                year: vm.year.flatMap { Int($0) },
-                style: .pill
-            )
+            if let watchlistId = canonicalWatchlistId,
+               let mediaType = watchlistMediaType {
+                WatchlistButton(
+                    canonicalId: watchlistId,
+                    mediaType: mediaType,
+                    plexRatingKey: vm.plexRatingKey,
+                    plexGuid: vm.plexGuid,
+                    tmdbId: vm.tmdbId,
+                    imdbId: nil,
+                    title: vm.title,
+                    year: vm.year.flatMap { Int($0) },
+                    style: .pill
+                )
+            }
         }
     }
 }
@@ -741,7 +809,8 @@ private struct EpisodesTabContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if vm.seasons.count > 1 {
+            // Hide season picker in season-only mode
+            if !vm.isSeason && vm.seasons.count > 1 {
                 HStack {
                     Picker("Season", selection: Binding<String>(
                         get: { vm.selectedSeasonKey ?? "" },
@@ -901,9 +970,13 @@ private struct ExtrasTabContent: View {
 private extension DetailsView {
     var tabsData: [DetailsTab] {
         var t: [DetailsTab] = []
-        if vm.mediaKind == "tv" { t.append(DetailsTab(id: "EPISODES", label: "Episodes", count: nil)) }
-        t.append(DetailsTab(id: "SUGGESTED", label: "Suggested", count: nil))
-        t.append(DetailsTab(id: "EXTRAS", label: "Extras", count: nil))
+        // Show EPISODES tab for TV shows and seasons
+        if vm.mediaKind == "tv" || vm.isSeason { t.append(DetailsTab(id: "EPISODES", label: "Episodes", count: nil)) }
+        // Hide SUGGESTED and EXTRAS tabs for season-only mode
+        if !vm.isSeason {
+            t.append(DetailsTab(id: "SUGGESTED", label: "Suggested", count: nil))
+            t.append(DetailsTab(id: "EXTRAS", label: "Extras", count: nil))
+        }
         t.append(DetailsTab(id: "DETAILS", label: "Details", count: nil))
         return t
     }

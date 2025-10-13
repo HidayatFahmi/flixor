@@ -157,10 +157,21 @@ struct LandscapeCard: View {
 
     private func fetchTMDBBackdropForPlexItem(ratingKey: String, width: Int, height: Int) async throws -> URL? {
         let api = APIClient.shared
-        struct PlexMeta: Codable { let type: String?; let Guid: [PlexGuid]? }
+        struct PlexMeta: Codable {
+            let type: String?
+            let Guid: [PlexGuid]?
+            let parentRatingKey: String? // For seasons, get parent show
+        }
         struct PlexGuid: Codable { let id: String? }
 
         let meta: PlexMeta = try await api.get("/api/plex/metadata/\(ratingKey)")
+
+        // For seasons, fetch the parent show's backdrop instead
+        if meta.type == "season", let parentKey = meta.parentRatingKey {
+            print("🎬 [LandscapeCard] Season detected, fetching parent show backdrop (parentKey: \(parentKey))")
+            return try await fetchTMDBBackdropForPlexItem(ratingKey: parentKey, width: width, height: height)
+        }
+
         let mediaType = (meta.type == "movie") ? "movie" : "tv"
 
         if let guid = meta.Guid?.compactMap({ $0.id }).first(where: { $0.contains("tmdb://") || $0.contains("themoviedb://") }),

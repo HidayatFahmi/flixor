@@ -1124,7 +1124,11 @@ struct PlayerControlsView: View {
                             grandparentThumb: viewModel.item.grandparentThumb,
                             grandparentArt: viewModel.item.grandparentArt,
                             parentIndex: episode.parentIndex,
-                            index: episode.index
+                            index: episode.index,
+                            parentRatingKey: nil,
+                            parentTitle: nil,
+                            leafCount: nil,
+                            viewedLeafCount: nil
                         )
                         showEpisodesList = false
                         viewModel.stopPlayback()

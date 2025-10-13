@@ -1491,7 +1491,11 @@ class PlayerViewModel: ObservableObject {
             grandparentThumb: item.grandparentThumb,
             grandparentArt: item.grandparentArt,
             parentIndex: next.parentIndex,
-            index: next.index
+            index: next.index,
+            parentRatingKey: nil,
+            parentTitle: nil,
+            leafCount: nil,
+            viewedLeafCount: nil
         )
 
         print("▶️ [Player] Play next: \(next.title)")
