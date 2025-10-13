@@ -31,6 +31,7 @@ struct BrowseModalView: View {
                     header
                     Divider()
                         .background(Color.white.opacity(0.08))
+                        .padding(.bottom, 20)
                     content
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .padding(.horizontal, 24)
@@ -153,6 +154,7 @@ struct BrowseModalView: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
+                .padding(.top, 12)
                 .padding(.bottom, 12)
             }
             .scrollIndicators(.hidden)
@@ -168,7 +170,7 @@ struct BrowseModalView: View {
 
 // MARK: - Skeleton Grid
 
-private struct BrowseSkeletonGrid: View {
+struct BrowseSkeletonGrid: View {
     let cardWidth: CGFloat
     private let placeholders = Array(0..<8)
 

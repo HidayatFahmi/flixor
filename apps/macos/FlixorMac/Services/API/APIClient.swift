@@ -341,6 +341,38 @@ struct TraktUserProfile: Decodable {
     let ids: IDs?
 }
 
+struct TMDBPersonSearchResponse: Codable {
+    struct Result: Codable {
+        let id: Int?
+        let name: String?
+        let profile_path: String?
+        let known_for_department: String?
+    }
+    let results: [Result]?
+}
+
+struct TMDBPersonCombinedResponse: Codable {
+    struct Credit: Codable, Identifiable {
+        let id: Int?
+        let media_type: String?
+        let title: String?
+        let name: String?
+        let character: String?
+        let job: String?
+        let overview: String?
+        let popularity: Double?
+        let release_date: String?
+        let first_air_date: String?
+        let poster_path: String?
+        let backdrop_path: String?
+
+        var displayTitle: String { title ?? name ?? "Untitled" }
+    }
+
+    let cast: [Credit]?
+    let crew: [Credit]?
+}
+
 // MARK: - New & Popular API Methods
 
 extension APIClient {
@@ -394,6 +426,18 @@ extension APIClient {
     ///   - id: TMDB ID
     func getTMDBImages(mediaType: String, id: String) async throws -> TMDBImagesResponse {
         return try await get("/api/tmdb/\(mediaType)/\(id)/images")
+    }
+
+    /// Search for a person on TMDB by name
+    func searchTMDBPerson(name: String) async throws -> TMDBPersonSearchResponse {
+        return try await get("/api/tmdb/search/person", queryItems: [
+            URLQueryItem(name: "query", value: name)
+        ])
+    }
+
+    /// Fetch combined movie and TV credits for a TMDB person id
+    func getTMDBPersonCombinedCredits(id: String) async throws -> TMDBPersonCombinedResponse {
+        return try await get("/api/tmdb/person/\(id)/combined_credits")
     }
 
     // MARK: - Trakt Methods

@@ -78,6 +78,8 @@
 		A200 /* BrowseContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B080 /* BrowseContext.swift */; };
 		A201 /* BrowseModalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B081 /* BrowseModalViewModel.swift */; };
 		A202 /* BrowseModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B082 /* BrowseModalView.swift */; };
+		A203 /* PersonModalViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B083 /* PersonModalViewModel.swift */; };
+		A204 /* PersonModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B084 /* PersonModalView.swift */; };
 		C8D6025C2E97EBB8002C9348 /* libsoxr.0.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602152E97EBB4002C9348 /* libsoxr.0.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025D2E97EBB8002C9348 /* libswscale.8.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602162E97EBB4002C9348 /* libswscale.8.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C8D6025E2E97EBB8002C9348 /* libwebpmux.3.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = C8D602172E97EBB4002C9348 /* libwebpmux.3.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -388,6 +390,8 @@
 		B080 /* BrowseContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseContext.swift; sourceTree = "<group>"; };
 		B081 /* BrowseModalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseModalViewModel.swift; sourceTree = "<group>"; };
 		B082 /* BrowseModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseModalView.swift; sourceTree = "<group>"; };
+		B083 /* PersonModalViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonModalViewModel.swift; sourceTree = "<group>"; };
+		B084 /* PersonModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonModalView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -552,6 +556,7 @@
 				B032 /* BackendConfigViewModel.swift */,
 				B029 /* HomeViewModel.swift */,
 				B081 /* BrowseModalViewModel.swift */,
+				B083 /* PersonModalViewModel.swift */,
 				B037 /* DetailsViewModel.swift */,
 				B040 /* SearchViewModel.swift */,
 				B041 /* PlayerViewModel.swift */,
@@ -602,6 +607,7 @@
 				B020 /* LandscapeCard.swift */,
 				B022 /* CarouselView.swift */,
 				B082 /* BrowseModalView.swift */,
+				B084 /* PersonModalView.swift */,
 				B023 /* BillboardView.swift */,
 				B067 /* NewPopularHero.swift */,
 				B024 /* VirtualGrid.swift */,
@@ -847,6 +853,7 @@
 				A200 /* BrowseContext.swift in Sources */,
 				A029 /* HomeViewModel.swift in Sources */,
 				A201 /* BrowseModalViewModel.swift in Sources */,
+				A203 /* PersonModalViewModel.swift in Sources */,
 				A030 /* HomeView.swift in Sources */,
 				A032 /* BackendConfigViewModel.swift in Sources */,
 				A033 /* BackendConfigView.swift in Sources */,
@@ -864,6 +871,7 @@
 				A045 /* CollectionsView.swift in Sources */,
 				A046 /* WatchlistController.swift in Sources */,
 				A047 /* MyListViewModel.swift in Sources */,
+				A204 /* PersonModalView.swift in Sources */,
 				C8D602A42E97F7D9002C9348 /* MPVVideoLayer.swift in Sources */,
 				A048 /* MyListView.swift in Sources */,
 				A049 /* WatchlistButton.swift in Sources */,

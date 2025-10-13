@@ -128,171 +128,42 @@ struct IdleStateView: View {
     let onTap: (SearchViewModel.SearchResult) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Recommended TV Shows & Movies")
-                .font(.title2.bold())
-                .padding(.horizontal, 20)
-
-            // Adaptive grid of trending items using landscape cards
-            TrendingResultsGrid(items: viewModel.trendingItems, onTap: onTap)
-        }
+        TrendingResultsRow(items: viewModel.trendingItems, onTap: onTap)
     }
 }
 
-// MARK: - Trending Results Grid (Landscape Cards)
 
-struct TrendingResultsGrid: View {
+struct PlexResultsRow: View {
     let items: [SearchViewModel.SearchResult]
     let onTap: (SearchViewModel.SearchResult) -> Void
 
-    @State private var gridHeight: CGFloat = 200
+    private let cardWidth: CGFloat = 420
 
     var body: some View {
-        GeometryReader { geometry in
-            let availableWidth = geometry.size.width - 40 // Account for horizontal padding
-            let cardWidth: CGFloat = 360
-            let spacing: CGFloat = 16
-            let columns = max(1, Int((availableWidth + spacing) / (cardWidth + spacing)))
-
-            let gridColumns = Array(repeating: GridItem(.flexible(), spacing: spacing), count: columns)
-
-            LazyVGrid(columns: gridColumns, spacing: spacing) {
-                ForEach(items) { result in
-                    SearchLandscapeCard(result: result) {
-                        onTap(result)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .background(
-                GeometryReader { contentGeometry in
-                    Color.clear.preference(
-                        key: TrendingGridHeightKey.self,
-                        value: contentGeometry.size.height
-                    )
-                }
-            )
-            .onPreferenceChange(TrendingGridHeightKey.self) { height in
-                gridHeight = height
+        CarouselRow(
+            title: "Results from Your Plex",
+            items: items,
+            itemWidth: cardWidth,
+            spacing: 16,
+            rowHeight: (cardWidth * 0.5) + 56
+        ) { item in
+            LandscapeCard(item: item.asMediaItem(), width: cardWidth) {
+                onTap(item)
             }
         }
-        .frame(height: gridHeight)
     }
 }
-
-struct TrendingGridHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 200
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-// MARK: - Search Landscape Card (for trending items)
-
-struct SearchLandscapeCard: View {
-    let result: SearchViewModel.SearchResult
-    let onTap: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let height = width * 0.5
-
-            Button(action: onTap) {
-                ZStack(alignment: .bottomLeading) {
-                    // Backdrop image (TMDB with non-null iso_639_1)
-                    Group {
-                        if let url = result.imageURL {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .empty:
-                                    SkeletonView(height: height, cornerRadius: 14)
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                case .failure:
-                                    PlaceholderImage()
-                                @unknown default:
-                                    PlaceholderImage()
-                                }
-                            }
-                        } else {
-                            PlaceholderImage()
-                        }
-                    }
-                    .frame(width: width, height: height)
-                    .clipped()
-
-                    // Gradient overlay for text readability
-                    LinearGradient(
-                        colors: [
-                            .black.opacity(0.0),
-                            .black.opacity(0.75)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-
-                    // Title overlay
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(result.title)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-
-                        if let year = result.year {
-                            Text(year)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(1)
-                        }
-                    }
-                    .padding(12)
-                }
-                .frame(width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(isHovering ? 0.9 : 0.15), lineWidth: isHovering ? 2 : 1)
-                )
-                .shadow(color: .black.opacity(isHovering ? 0.5 : 0.3), radius: isHovering ? 15 : 8, y: isHovering ? 8 : 4)
-            }
-            .buttonStyle(.plain)
-            .scaleEffect(isHovering ? 1.03 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovering)
-            .onHover { hovering in
-                isHovering = hovering
-            }
-        }
-        .aspectRatio(2.0, contentMode: .fit)
-    }
-}
-
-// MARK: - Search Results (Plex Grid + TMDB Rows + Genre Rows)
-
 struct SearchResultsView: View {
     @ObservedObject var viewModel: SearchViewModel
     let onTap: (SearchViewModel.SearchResult) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Plex Results - Adaptive grid with landscape cards
             if !viewModel.plexResults.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Results from Your Plex")
-                        .font(.title2.bold())
-                        .padding(.horizontal, 20)
-
-                    // Adaptive grid of Plex results using landscape cards
-                    PlexResultsGrid(items: viewModel.plexResults, onTap: onTap)
-                }
-                .padding(.bottom, 32)
+                PlexResultsRow(items: viewModel.plexResults, onTap: onTap)
+                    .padding(.bottom, 32)
             }
 
-            // TMDB Movies Row
             if !viewModel.tmdbMovies.isEmpty {
                 SearchHorizontalRow(
                     title: viewModel.plexResults.isEmpty ? "Top Results" : "Movies",
@@ -302,7 +173,6 @@ struct SearchResultsView: View {
                 .padding(.bottom, 32)
             }
 
-            // TMDB TV Shows Row
             if !viewModel.tmdbShows.isEmpty {
                 SearchHorizontalRow(
                     title: "TV Shows",
@@ -312,7 +182,6 @@ struct SearchResultsView: View {
                 .padding(.bottom, 32)
             }
 
-            // Genre Rows
             ForEach(viewModel.genreRows) { genreRow in
                 SearchHorizontalRow(
                     title: genreRow.title,
@@ -325,136 +194,25 @@ struct SearchResultsView: View {
     }
 }
 
-// MARK: - Adaptive Plex Results Grid
 
-struct PlexResultsGrid: View {
+// MARK: - Trending Results Row (Landscape Cards)
+
+struct TrendingResultsRow: View {
     let items: [SearchViewModel.SearchResult]
     let onTap: (SearchViewModel.SearchResult) -> Void
 
-    @State private var gridHeight: CGFloat = 200
-
     var body: some View {
-        GeometryReader { geometry in
-            let availableWidth = geometry.size.width - 40 // Account for horizontal padding
-            let cardWidth: CGFloat = 360
-            let spacing: CGFloat = 16
-            let columns = max(1, Int((availableWidth + spacing) / (cardWidth + spacing)))
-
-            let gridColumns = Array(repeating: GridItem(.flexible(), spacing: spacing), count: columns)
-
-            LazyVGrid(columns: gridColumns, spacing: spacing) {
-                ForEach(items) { result in
-                    PlexLandscapeCard(result: result) {
-                        onTap(result)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .background(
-                GeometryReader { contentGeometry in
-                    Color.clear.preference(
-                        key: GridHeightPreferenceKey.self,
-                        value: contentGeometry.size.height
-                    )
-                }
-            )
-            .onPreferenceChange(GridHeightPreferenceKey.self) { height in
-                gridHeight = height
+        CarouselRow(
+            title: "Recommended TV Shows & Movies",
+            items: items,
+            itemWidth: 420,
+            spacing: 16,
+            rowHeight: (420 * 0.5) + 56
+        ) { item in
+            LandscapeCard(item: item.asMediaItem(), width: 420) {
+                onTap(item)
             }
         }
-        .frame(height: gridHeight)
-    }
-}
-
-struct GridHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 200
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-
-// MARK: - Plex Landscape Card (Adaptive grid item with TMDB backdrop + title)
-
-struct PlexLandscapeCard: View {
-    let result: SearchViewModel.SearchResult
-    let onTap: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let height = width * 0.5
-
-            Button(action: onTap) {
-                ZStack(alignment: .bottomLeading) {
-                    // Backdrop image (TMDB already fetched in ViewModel)
-                    Group {
-                        if let url = result.imageURL {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .empty:
-                                    SkeletonView(height: height, cornerRadius: 14)
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                case .failure:
-                                    PlaceholderImage()
-                                @unknown default:
-                                    PlaceholderImage()
-                                }
-                            }
-                        } else {
-                            PlaceholderImage()
-                        }
-                    }
-                    .frame(width: width, height: height)
-                    .clipped()
-
-                    // Gradient overlay for text readability
-                    LinearGradient(
-                        colors: [
-                            .black.opacity(0.0),
-                            .black.opacity(0.75)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-
-                    // Title overlay
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(result.title)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-
-                        if let year = result.year {
-                            Text(year)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(1)
-                        }
-                    }
-                    .padding(12)
-                }
-                .frame(width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(isHovering ? 0.9 : 0.15), lineWidth: isHovering ? 2 : 1)
-                )
-                .shadow(color: .black.opacity(isHovering ? 0.5 : 0.3), radius: isHovering ? 15 : 8, y: isHovering ? 8 : 4)
-            }
-            .buttonStyle(.plain)
-            .scaleEffect(isHovering ? 1.03 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovering)
-            .onHover { hovering in
-                isHovering = hovering
-            }
-        }
-        .aspectRatio(2.0, contentMode: .fit)
     }
 }
 
@@ -466,98 +224,47 @@ struct SearchHorizontalRow: View {
     let onTap: (SearchViewModel.SearchResult) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.system(size: 18, weight: .bold))
-                .padding(.horizontal, 20)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(items) { item in
-                        SearchPosterCard(item: item, width: 150) {
-                            onTap(item)
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
+        CarouselRow(
+            title: title,
+            items: items,
+            itemWidth: 150,
+            spacing: 14,
+            rowHeight: (150 * 1.5) + 68
+        ) { item in
+            PosterCard(
+                item: item.asMediaItem(),
+                width: 150,
+                topTrailingOverlay: item.available ? AnyView(AvailableBadge().padding(6)) : nil
+            ) {
+                onTap(item)
             }
         }
     }
 }
 
-// MARK: - Search Poster Card (for horizontal rows)
+// MARK: - SearchResult Adapter
 
-struct SearchPosterCard: View {
-    let item: SearchViewModel.SearchResult
-    let width: CGFloat
-    let onTap: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
-                // Poster Image
-                Group {
-                    if let url = item.imageURL {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .empty:
-                                SkeletonView(height: 225, cornerRadius: 8)
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            case .failure:
-                                PlaceholderImage()
-                            @unknown default:
-                                PlaceholderImage()
-                            }
-                        }
-                    } else {
-                        PlaceholderImage()
-                    }
-                }
-                .frame(width: width, height: width * 1.5)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                )
-                .overlay(alignment: .topTrailing) {
-                    if item.available {
-                        AvailableBadge()
-                            .padding(6)
-                    }
-                }
-                .shadow(color: .black.opacity(isHovering ? 0.4 : 0.2), radius: isHovering ? 12 : 6, y: isHovering ? 6 : 3)
-
-                // Title
-                Text(item.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                // Year
-                if let year = item.year {
-                    Text(year)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: width)
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(isHovering ? 1.05 : 1.0)
-        .animation(.easeInOut(duration: 0.2), value: isHovering)
-        .onHover { hovering in
-            isHovering = hovering
-        }
+extension SearchViewModel.SearchResult {
+    func asMediaItem() -> MediaItem {
+        MediaItem(
+            id: id,
+            title: title,
+            type: type.rawValue,
+            thumb: imageURL?.absoluteString,
+            art: imageURL?.absoluteString,
+            year: year.flatMap { Int($0) },
+            rating: nil,
+            duration: nil,
+            viewOffset: nil,
+            summary: overview,
+            grandparentTitle: nil,
+            grandparentThumb: nil,
+            grandparentArt: nil,
+            parentIndex: nil,
+            index: nil
+        )
     }
 }
-
-
 // MARK: - Available Badge
 
 struct AvailableBadge: View {

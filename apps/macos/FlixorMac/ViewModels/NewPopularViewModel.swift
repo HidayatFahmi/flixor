@@ -348,8 +348,9 @@ class NewPopularViewModel: ObservableObject {
     private func fetchPlexRecentlyAdded() async throws -> [DisplayMediaItem] {
         do {
             let items = try await apiClient.getPlexRecentlyAdded(days: 7)
+            let filteredItems = items.filter { $0.type != "season" }
 
-            return items.prefix(20).map { item in
+            return filteredItems.prefix(20).map { item in
                 DisplayMediaItem(
                     id: "plex:\(item.ratingKey)",
                     title: item.title ?? item.grandparentTitle ?? "Unknown",
@@ -418,8 +419,10 @@ class NewPopularViewModel: ObservableObject {
 
             print("📊 [NewPopular] Total items collected: \(allItems.count)")
 
+            // Filter out season items
+            let filteredItems = allItems.filter { $0.type != "season" }
             // Score items based on lastViewedAt and viewCount
-            let scored = allItems.map { item -> (item: PlexMediaItem, score: Int) in
+            let scored = filteredItems.map { item -> (item: PlexMediaItem, score: Int) in
                 let lv = item.lastViewedAt ?? 0
                 let vc = item.viewCount ?? 0
                 let score = lv * 10 + vc

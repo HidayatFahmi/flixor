@@ -111,6 +111,9 @@ struct DetailsView: View {
     @StateObject private var browseViewModel = BrowseModalViewModel()
     @State private var showBrowseModal = false
     @State private var activeBrowseContext: BrowseContext?
+    @StateObject private var personViewModel = PersonModalViewModel()
+    @State private var showPersonModal = false
+    @State private var activePerson: PersonReference?
     @EnvironmentObject private var router: NavigationRouter
     @EnvironmentObject private var mainView: MainViewState
 
@@ -139,7 +142,9 @@ struct DetailsView: View {
                                     presentBrowse(context)
                                 })
                             case "DETAILS":
-                                DetailsTabContent(vm: vm, layout: layout)
+                                DetailsTabContent(vm: vm, layout: layout, onPersonTap: { person in
+                                    presentPerson(person)
+                                })
                             case "EPISODES":
                                 EpisodesTabContent(vm: vm, layout: layout, onPlayEpisode: playEpisode)
                             case "EXTRAS":
@@ -172,8 +177,29 @@ struct DetailsView: View {
                         }
                     }
                 )
+                .padding(.top, 80)
                 .transition(.opacity)
                 .zIndex(2)
+            }
+
+            if showPersonModal {
+                PersonModalView(
+                    isPresented: $showPersonModal,
+                    person: activePerson,
+                    viewModel: personViewModel,
+                    onSelect: { media in
+                        showPersonModal = false
+                        Task {
+                            await vm.load(for: media)
+                            await MainActor.run {
+                                activeTab = (vm.mediaKind == "tv") ? "EPISODES" : "SUGGESTED"
+                            }
+                        }
+                    }
+                )
+                .padding(.top, 80)
+                .transition(.opacity)
+                .zIndex(3)
             }
         }
         .ignoresSafeArea(edges: .top)
@@ -187,6 +213,12 @@ struct DetailsView: View {
             if !value {
                 activeBrowseContext = nil
                 browseViewModel.reset()
+            }
+        }
+        .onChange(of: showPersonModal) { value in
+            if !value {
+                activePerson = nil
+                personViewModel.reset()
             }
         }
         // Destination for PlayerView is handled at root via NavigationStack(path:)
@@ -242,6 +274,16 @@ struct DetailsView: View {
         showBrowseModal = true
         Task {
             await browseViewModel.load(context: context)
+        }
+    }
+
+    private func presentPerson(_ person: CastCrewCard.Person) {
+        guard !person.id.isEmpty, Int(person.id) != nil else { return }
+        let reference = PersonReference(id: person.id, name: person.name, role: person.role, image: person.image)
+        activePerson = reference
+        showPersonModal = true
+        Task {
+            await personViewModel.load(personId: reference.id, name: reference.name, profilePath: reference.image)
         }
     }
 
@@ -549,6 +591,7 @@ private struct SuggestedSections: View {
 private struct DetailsTabContent: View {
     @ObservedObject var vm: DetailsViewModel
     let layout: DetailsLayoutMetrics
+    var onPersonTap: (CastCrewCard.Person) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 40) {
@@ -614,7 +657,7 @@ private struct DetailsTabContent: View {
 
             // Cast & Crew
             if !vm.cast.isEmpty || !vm.crew.isEmpty {
-                CastCrewSection(cast: vm.cast, crew: vm.crew, layout: layout)
+                CastCrewSection(cast: vm.cast, crew: vm.crew, layout: layout, onPersonTap: onPersonTap)
             }
         }
     }
@@ -1243,13 +1286,14 @@ private struct CastCrewSection: View {
     let cast: [DetailsViewModel.Person]
     let crew: [DetailsViewModel.CrewPerson]
     let layout: DetailsLayoutMetrics
+    var onPersonTap: (CastCrewCard.Person) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             DetailsSectionHeader(title: "Cast & Crew")
             LazyVGrid(columns: [GridItem(.adaptive(minimum: layout.castGridMinimum), spacing: 20)], spacing: 24) {
                 ForEach(Array(people.prefix(15))) { person in
-                    CastCrewCard(person: person)
+                    CastCrewCard(person: person, onTap: { onPersonTap(person) })
                 }
             }
         }
@@ -1281,50 +1325,70 @@ private struct CastCrewCard: View, Identifiable {
     }
 
     let person: Person
+    var onTap: () -> Void
     var id: String { person.id }
+    @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Profile Image
-            ZStack {
-                if let imageURL = person.image {
-                    CachedAsyncImage(url: imageURL)
-                        .aspectRatio(2/3, contentMode: .fill)
-                        .frame(maxWidth: .infinity)
-                        .clipped()
-                } else {
-                    // Placeholder for missing image
-                    Rectangle()
-                        .fill(Color.white.opacity(0.08))
-                        .aspectRatio(2/3, contentMode: .fit)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 28))
-                                .foregroundStyle(.white.opacity(0.25))
-                        )
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 10) {
+                ZStack {
+                    if let imageURL = person.image {
+                        CachedAsyncImage(url: imageURL)
+                            .aspectRatio(2/3, contentMode: .fill)
+                            .frame(maxWidth: .infinity)
+                            .clipped()
+                    } else {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.08))
+                            .aspectRatio(2/3, contentMode: .fit)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(.white.opacity(0.25))
+                            )
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(person.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(2)
+                        .foregroundStyle(.white.opacity(0.95))
+                    if let role = person.role, !role.isEmpty {
+                        Text(role)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .lineLimit(1)
+                    }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-
-            // Name & Role
-            VStack(alignment: .leading, spacing: 3) {
-                Text(person.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(2)
-                    .foregroundStyle(.white.opacity(0.95))
-                if let role = person.role, !role.isEmpty {
-                    Text(role)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-                }
+            .padding(.bottom, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(isHovered ? 0.06 : 0))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(isHovered ? 0.18 : 0.12), lineWidth: isHovered ? 1 : 0.5)
+        )
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .shadow(color: .black.opacity(isHovered ? 0.35 : 0.2), radius: isHovered ? 12 : 6, y: isHovered ? 6 : 3)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.2)) {
+                isHovered = hovering
             }
         }
+        .accessibilityLabel(Text("\(person.name)\(person.role.map { ", \($0)" } ?? "")"))
     }
 }
 
